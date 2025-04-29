@@ -1,0 +1,24 @@
+# Ignore macOS file in there
+.DS_Store
+
+# Ignore compile files by VS code studio
+**/*.dSYM/
+.vscode/
+
+# Ignore all dSYM folders and their contents
+**/*.dSYM/**
+
+# Ignore all precompiled files
+**/*.o
+
+# Ignore all FASTA files
+**/*.fa
+
+# Ignore all GFF3 annotation files
+**/*.gff3
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
