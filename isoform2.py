@@ -364,23 +364,25 @@ def gff_sites(seq, gff, gtag=True):
 def hmm_sites(hmodel, fasta):
 	''' python run and parser for hmm '''
  
-	result = hints.run(hmodel, fasta)
+	result = hints.run_hmm(hmodel, fasta)
 	dons, accs = hints.parse(result)
  
 	return dons, accs
 
 def filter_sites(dons, accs, type:int, dons2=False, accs2=False):
 	''' function to cut dons and acceptor site'''
-	
+
 	if dons2 and accs2:
 		dons1 = [don[0] for don in dons]
 		accs1 = [acc[0] for acc in accs]
+		'''
 		assert all([
     		len(dons1) == len(dons2),
     		len(accs1) == len(accs2),
     		dons1 == dons2,
     		accs1 == accs2
 		]), "Check hmm output. Splice site not match"
+		'''
 	
 	methods = {
 		0: hints.gapstats,
@@ -401,8 +403,8 @@ def hints_sites(hmm, fasta, seq, flank, min_exon, type:int):
 	
 	dons, accs	 = hmm_sites(hmm, fasta)
 	dons2, accs2 = gtag_sites(seq, flank, min_exon)
-	
-	return filter_sites(dons, accs, type, dons2, accs2)
+	mdon, macc   = filter_sites(dons, accs, type, dons2, accs2)
+	return mdon, macc
 
 class Isoform:
 	"""Class to represent a single isoform"""

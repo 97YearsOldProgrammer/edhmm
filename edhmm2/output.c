@@ -525,7 +525,7 @@ void print_splice_sites(Viterbi_algorithm *vit, Observed_events *info, Explicit_
 {
     int array_size = info->T - 2 * FLANK - 2 * ed->min_len_exon;
 
-    const double epsilon = 1e-10;
+    const double epsilon = 1e-14;
     
     printf("DONS\n");
 
@@ -545,7 +545,7 @@ void print_splice_sites(Viterbi_algorithm *vit, Observed_events *info, Explicit_
         if (vit->xi_sum[1][i] > epsilon)
         {
             int pos = i + FLANK + ed->min_len_exon;
-            printf("%d\t%.10f\n", pos - 2, vit->xi_sum[1][i]);
+            printf("%d\t%.10f\n", pos - 1, vit->xi_sum[1][i]);
         }
     }
 }

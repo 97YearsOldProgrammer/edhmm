@@ -120,42 +120,6 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth)// set t
     }
 }
 
-void normalize_transition_prob(Lambda *l, int len, int dons_or_accs)
-{
-    if (DEBUG == 1)     printf("Start normalizing transition prob:");
-
-    double sum = 0.0;
-
-    if (dons_or_accs == 0)
-    {
-        for ( int i = 0 ; i < len ; i ++ )  sum += l->A.dons[i];
-
-        double value;
-        for ( int i = 0 ; i < len ; i ++ )
-        {
-            value = l->A.dons[i];
-            if (value == 0.0)       continue;
-            else                    l->A.dons[i] = exp ( log(value) - log(sum) );
-            
-        }
-    }
-    else if (dons_or_accs == 1)
-    {
-        for ( int i = 0 ; i < len ; i ++ )  sum += l->A.accs[i];
-
-        double value;
-        for ( int i = 0 ; i < len ; i ++ )
-        {
-            value = l->A.accs[i];
-
-            if (value == 0.0)       continue;
-            else                    l->A.accs[i] = exp( (log(value) - log(sum) ) );
-        }
-    }
-
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
-
 double log_sum_exp(double *array, int n) 
 {
     double max = array[0];
@@ -178,7 +142,6 @@ void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_d
     if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
 
     int arary_size = info->T - 2 * FLANK - 2 * ed->min_len_exon;
-
     /*
         alpha->a[t][i]
         [t]: specific time among all observed events 
@@ -188,7 +151,6 @@ void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_d
         each spot is storing a(t)(m, 1) ; based on 2006 implementation
         [m]: types of hidden state
     */
-
     alpha->a    = malloc ( ( arary_size ) * sizeof(double*) ); 
 
     for (int i = 0 ; i < arary_size; i++ )     
@@ -202,7 +164,6 @@ void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_d
         each one assign 1D array for each t - 1 layer of all possible D computation
         based on forward algorithm; each at(m, d) partially depends one a(t-1)(m, d+1)
     */
-
     alpha->basis    = malloc( HS * sizeof(double*) );                   
     alpha->basis[0] = calloc( ed->max_len_exon, sizeof(double) );
     alpha->basis[1] = calloc( ed->max_len_intron, sizeof(double));
@@ -396,7 +357,7 @@ void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_durati
     if (DEBUG == 1)     printf("Clearing up forward algorithm memory:");
     
     int array_size = info->T - 2 * FLANK - 2 * ed->min_len_exon;
-    for (int i = 0; i < array_size; i++)        free(alpha->a[i]);
+    for ( int i = 0; i < array_size; i++ )      free(alpha->a[i]);
     free(alpha->a);
     free(alpha->basis[0]);
     free(alpha->basis[1]);
@@ -437,7 +398,7 @@ void allocate_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_du
 
 void argmax_viterbi(Viterbi_algorithm *vit, int t)
 {   
-    int argmax;
+    int argmax = 0;
 
     /*
         for our model: consider following viterbi formula
@@ -457,8 +418,6 @@ void argmax_viterbi(Viterbi_algorithm *vit, int t)
 
     if      ( vit->gamma[0] > vit->gamma[1] )                       argmax = 0;
     else if ( vit->gamma[0] < vit->gamma[1] )                       argmax = 1;
-    else if ( ( vit->gamma[0] == vit->gamma[1] ) && DEBUG == 1)     printf("\nDoes this really gonna happen? At %d. γ[0]: %f γ[1]: %f", t , vit->gamma[0], vit->gamma[1]);
-
     vit->path[t] = argmax;
 }
 
@@ -513,7 +472,6 @@ void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit,
     else if (alpha_component == 0.0)    xi = 0.0;
     else if (backward_sum == 0.0)       xi = 0.0;
     else    xi = exp( log(trans_prob) + log(alpha_component) + log(emission_prob) + log(backward_sum) );
-
     vit->xi[type] = xi;
 }
 
@@ -525,13 +483,10 @@ void viterbi_basis(Viterbi_algorithm *vit, Forward_algorithm *alpha)
         γ(t)(m) = sum(d>=1) α(t)(m, d)
         at final t; there is only one α(t)(m, 1) existed
     */
-
     double gamma_exon;
     double gamma_intron;
-
     gamma_exon   = alpha->basis[0][0];
     gamma_intron = alpha->basis[1][0];
-
     vit->gamma[0] = gamma_exon;
     vit->gamma[1] = gamma_intron;
     
@@ -578,8 +533,7 @@ void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *in
     {
         bps = FLANK + ed->min_len_exon + t;
         argmax_viterbi(vit, t);
-
-        if ( t == 0 )    break;                                                                 // don't remove this; it have a reason to be here
+        if ( t == 0 )    break;    
         tau ++;
 
         for ( int i = 0 ; i < HS ; i ++ )                                                       // the before position; 0 for exon, 1 for intron

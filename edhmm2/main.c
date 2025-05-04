@@ -5,12 +5,12 @@
 int main(int argc, char *argv[])
 {
     // Default paths for model files
-    char *default_don_emission = "../../models/don.pwm";
-    char *default_acc_emission = "../../models/acc.pwm";
-    char *default_exon_emission = "../../models/exon.mm";
-    char *default_intron_emission = "../../models/intron.mm";
-    char *default_Ped_exon = "../../models/exon.len";
-    char *default_Ped_intron = "../../models/intron.len";
+    char *default_don_emission = "../models/don.pwm";
+    char *default_acc_emission = "../models/acc.pwm";
+    char *default_exon_emission = "../models/exon.mm";
+    char *default_intron_emission = "../models/intron.mm";
+    char *default_Ped_exon = "../models/exon.len";
+    char *default_Ped_intron = "../models/intron.len";
 
     // argv section for command-line inputs
     char *don_emission;
@@ -72,14 +72,10 @@ int main(int argc, char *argv[])
     initialize_acceptor_transition_matrix(&l, &apc, 0);        // setup transition prob for intron to exon
     if (DEBUG == 1)     printf("\tFinished\n");
 
-    // normalization for transition prob //
-    normalize_transition_prob(&l, 1024, 0);
-    normalize_transition_prob(&l, 4096, 1);
-
     // initialize memory //
     allocate_alpha(&info, &fw, &ed);                                 // allocate forward  algorithm
     allocate_beta(&bw, &ed);                                         // allocate backward algorithm
-
+    
     // initialize algorihtm //
     basis_forward_algorithm(&l, &ed, &fw, &info);                    // set up alpha 0
     initial_backward_algorithm(&bw);                                 // set up beta t

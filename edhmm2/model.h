@@ -2,7 +2,7 @@
 #define HMM_MODEL
 
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
-#define FLANK 100                       // define the global flank size
+#define FLANK 99                        // define the global flank size
 #define DEBUG 0                         // if this is 1, it would print out everything
 
 typedef struct                          // observed events with length T
@@ -74,24 +74,19 @@ typedef struct
 // declared function //
 
 // seq reading //
-
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
 
 // input model //
-
 void donor_parser(Lambda *l, char *filename);
 void acceptor_parser(Lambda *l, char *filename);
 void exon_intron_parser(Lambda *l, char *filename, int digit);
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit);
 
 // EDHMM setup // 
-
 void setup_initial_probability(Lambda *l);
 
 // computation function //
-
-void normalize_transition_prob(Lambda *l, int len, int dons_or_accs);
 int power(int base, int exp);
 int base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
@@ -103,14 +98,12 @@ void initialize_donor_transition_matrix(Lambda *l, Apc *a, int depth);
 void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 
 // forward algorithm //
-
 void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed);                        
 void basis_forward_algorithm(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info);
 void forward_algorithm(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
 
 // viterbi algorithm //
-
 void allocate_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed);
 void viterbi_basis(Viterbi_algorithm *vit, Forward_algorithm *alpha);
 void argmax_viterbi(Viterbi_algorithm *vit, int t);
@@ -118,7 +111,6 @@ void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit,
 void free_viterbi(Viterbi_algorithm *vit);
 
 // backward algorithm //
-
 void allocate_beta(Backward_algorithm *beta, Explicit_duration *ed);                             
 void initial_backward_algorithm(Backward_algorithm *beta);
 void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit, Forward_algorithm *alpha);

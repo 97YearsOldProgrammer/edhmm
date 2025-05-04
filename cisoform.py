@@ -28,24 +28,24 @@ parser.add_argument('--limit_isoform', required=False, type=int, default=10000,
 arg = parser.parse_args()
 
 def run(dir):
-	fastas = glob.glob(os.path.join(dir, "*.fa"))
-	fcount = 0
-	
-	for fasta in fastas:
-		fcount += 1
-		if fcount > arg.limit_fasta: break
-		
-		with open(fasta, 'r') as file:
+    fastas = glob.glob(os.path.join(dir, "*.fa"))
+    fcount = 0
+     
+    for fasta in fastas:
+        if fcount > arg.limit_fasta: break
+         
+        with open(fasta, 'r') as file:
+            # get donors and acceptors first
+            name, seq  = next(isoform2.read_fasta(fasta))
+            dons, accs = isoform2.gtag_sites(seq, arg.flank, arg.min_exon)
+            
             # isoform limit check
-			name, seq  = next(isoform2.read_fasta(fasta))
-			dons, accs = isoform2.gtag_sites(seq, arg.flank, arg.min_exon)
-			count      = hints.countiso(dons, accs, arg.min_intron, arg.min_exon, arg.limit_isoform)
-			if count < arg.limit_isoform: continue
-
+            count = hints.countiso(dons, accs, arg.min_intron, arg.min_exon, arg.limit_isoform)
+            if count < arg.limit_isoform: continue
+            fcount += 1
+                         
             # run geniso
-			output  = hints.run_geniso2(arg.geniso, fasta, arg.model)
-			output2 = hints.run_geniso2(arg.geniso, fasta, arg.model, arg.hmm)
-			
-			print(output)
+            output  = hints.run_geniso2(arg.geniso, fasta, arg.model) 
+            output2 = hints.run_geniso2(arg.geniso, fasta, arg.model, arg.hmm) 
 
 run(arg.dir)

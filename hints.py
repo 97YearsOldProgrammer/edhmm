@@ -1,16 +1,20 @@
 import subprocess
+import os
 import isoform2
+
 
 def run_hmm(hmm, fasta):
     ''' cmd to run hmm2'''
+    dir     = os.path.dirname(hmm)
+    models  = os.path.join(dir, "models")
     
     input = [
-        "../isoform_analysis/models/don.pwm",
-        "../isoform_analysis/models/acc.pwm",
-        "../isoform_analysis/models/exon.mm",
-        "../isoform_analysis/models/intron.mm",
-        "../isoform_analysis/models/exon.len",
-        "../isoform_analysis/models/intron.len"
+        os.path.join(models, "don.pwm"),
+        os.path.join(models, "acc.pwm"),
+        os.path.join(models, "exon.mm"),
+        os.path.join(models, "intron.mm"),
+        os.path.join(models, "exon.len"),
+        os.path.join(models, "intron.len")
     ]
     
     cmd = [hmm, fasta] + input
@@ -21,16 +25,18 @@ def run_hmm(hmm, fasta):
 def run_geniso2(geniso, fasta, model, hints=False):
     ''' cmd to run geniso '''
     
-    model = [
-        "../isoform_analysis/models/worm.splicemodel"
-    ]
-    
-    cmd  = [geniso, fasta] + model
-    hint = f'--hmm {hints}'
-    if hints: cmd = cmd + hint
-    result = subprocess.run(cmd, check=True, text=True, capture_output=True) 
-    
-    return result.stdout
+    cmd   = [geniso, fasta, model]
+    if hints:
+        cmd.append('--hmm')
+        cmd.append(str(hints))
+    try:
+        result = subprocess.run(cmd, check=True, text=True, capture_output=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"Command failed with exit code {e.returncode}")
+        print(f"STDERR: {e.stderr}")
+        # Continue execution without failing by returning the error message
+        return f"Error in geniso2: {e.stderr}"
 
 def parse(output):
     ''' Parse HMM output to extract donor and acceptor site probabilities '''

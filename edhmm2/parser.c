@@ -220,9 +220,7 @@ void explicit_duration_probability(Explicit_duration *ed, char *filename, int di
 
     if      ( digit == 0 && DEBUG == 1)  printf("Starting getting exon explicit duration probability");
     else if ( digit == 1 && DEBUG == 1)  printf("Starting getting intron explicit duration probability");
-    
     FILE *file = fopen(filename, "r");
-
 
     if (file == NULL)
     {
@@ -235,7 +233,6 @@ void explicit_duration_probability(Explicit_duration *ed, char *filename, int di
     char *token;
     double p;
     
-    // Initialize arrays to zero
     if (digit == 0) 
     {
         memset(ed->exon, 0, 1000 * sizeof(double));
@@ -249,48 +246,37 @@ void explicit_duration_probability(Explicit_duration *ed, char *filename, int di
     }
 
     int c_line = 0;
-    int nonzero_values = 0;
 
     while (fgets(line, sizeof(line), file) != NULL)
     {
-        if (line[0] == '%')     continue;  // Skip header line
+        if (line[0] == '%')     continue;
 
         c_line++;
-        
-        // Clean up the line - remove whitespace
         token = strtok(line, " \t\r\n");
         if (token == NULL) continue;
-        
         p = atof(token);
         
-        // Store the probability and track first non-zero value
         if (digit == 0) 
         {
             ed->exon[c_line] = p;
-            if (p > 0 && ed->min_len_exon == 0)     ed->min_len_exon = c_line;
+            if (p > 0 && ed->min_len_exon == 0)     ed->min_len_exon = c_line - 1;
         } else 
         {
             ed->intron[c_line] = p;
-            if (p > 0 && ed->min_len_intron == 0)   ed->min_len_intron = c_line;
+            if (p > 0 && ed->min_len_intron == 0)   ed->min_len_intron = c_line - 1;
         }
-        
-        if (p > 0) nonzero_values++;
     }
 
     fclose(file);
-    if (DEBUG == 1)     printf("\t\u2713\n");
-
-    // Set max length
     if (digit == 0) 
     {
         ed->max_len_exon = c_line;
-        if (DEBUG == 1)     printf("\tExon duration: min=%d, max=%d, found %d non-zero values\n\n", 
-               ed->min_len_exon, ed->max_len_exon, nonzero_values);
-    } else 
+        if (DEBUG == 1)     printf("\tExon duration: min=%d, max=%d\n\n", ed->min_len_exon, ed->max_len_exon);
+    } 
+    else 
     {
         ed->max_len_intron = c_line;
-        if (DEBUG == 1)     printf("\tIntron duration: min=%d, max=%d, found %d non-zero values\n\n", 
-               ed->min_len_intron, ed->max_len_intron, nonzero_values);
+        if (DEBUG == 1)     printf("\tIntron duration: min=%d, max=%d\n\n", ed->min_len_intron, ed->max_len_intron);
     }
-
+    if (DEBUG == 1)     printf("\t\u2713\n");
 }

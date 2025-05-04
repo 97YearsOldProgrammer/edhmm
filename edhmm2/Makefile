@@ -1,7 +1,7 @@
 CC = gcc
 
-CFLAGS = -fsanitize=address -g
-#CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
+#CFLAGS = -fsanitize=address -g
+CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
 
 OBJS = main.o parser.o model.o output.o
 
