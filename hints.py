@@ -64,6 +64,26 @@ def parse(output):
     
     return dons, accs
 
+def mgtag_sites(seq, flank, minex, minin):
+    dons = []
+    accs = []
+    for i in range(flank + minex, len(seq) - flank - minex):
+        if seq[i:i+2] == 'GT':
+            dons.append(i)
+        if seq[i-1:i+1] == 'AG':
+            accs.append(i)
+    
+    bound = len(seq) - minex - flank - minin
+    cutof = len(accs)
+    
+    for i in range(len(accs)-1, -1, -1):
+        if accs[i] <= bound:
+            cutof = i
+            break
+    
+    accs = accs[:cutof+1]
+    return dons, accs
+
 def gapstats(sites):
     ''' Gap statistic to find significant splice sites '''
     

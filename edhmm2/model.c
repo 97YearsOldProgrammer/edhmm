@@ -357,7 +357,8 @@ void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_durati
     if (DEBUG == 1)     printf("Clearing up forward algorithm memory:");
     
     int array_size = info->T - 2 * FLANK - 2 * ed->min_len_exon;
-    for ( int i = 0; i < array_size; i++ )      free(alpha->a[i]);
+    for ( int i = 0; i < array_size; i++ )
+        free(alpha->a[i]);
     free(alpha->a);
     free(alpha->basis[0]);
     free(alpha->basis[1]);
@@ -390,35 +391,10 @@ void allocate_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_du
     vit->gamma = malloc( HS * sizeof(double) );
     vit->path  = malloc( array_size * sizeof(int) );
     vit->xi_sum= malloc( HS * sizeof(double*) ); 
-
-    for (int i = 0 ; i < HS; i++ )                                      vit->xi_sum[i] = calloc( array_size , sizeof(double) );    
+    for (int i = 0 ; i < HS; i++ )
+        vit->xi_sum[i] = calloc( array_size , sizeof(double) );    
     
     if (DEBUG == 1)     printf("\tFinished\n");
-}
-
-void argmax_viterbi(Viterbi_algorithm *vit, int t)
-{   
-    int argmax = 0;
-
-    /*
-        for our model: consider following viterbi formula
-
-        γ(t)(exon)   = γ(t+1)(exon)   + ξ(exon, intron) - ξ(intron, exon)
-        γ(t)(intron) = γ(t+1)(intron) + ξ(intron, exon) - ξ(exon, intron)
-        
-        deduct from 2006 paper
-    */
-
-    vit->gamma[0] += vit->xi[0] - vit->xi[1];
-    vit->gamma[1] += vit->xi[1] - vit->xi[0];
-
-    // xi_sum is used for store specific xi value
-    vit->xi_sum[0][t] = vit->xi[0];
-    vit->xi_sum[1][t] = vit->xi[1];
-
-    if      ( vit->gamma[0] > vit->gamma[1] )                       argmax = 0;
-    else if ( vit->gamma[0] < vit->gamma[1] )                       argmax = 1;
-    vit->path[t] = argmax;
 }
 
 void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed, double backward_sum, int t, int type)
@@ -529,11 +505,9 @@ void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *in
     int tau = 0;
     int bps;
 
-    for ( int t = len - 1; t >= 0 ; t-- )
+    for ( int t = len - 1; t > 0 ; t-- )
     {
         bps = FLANK + ed->min_len_exon + t;
-        argmax_viterbi(vit, t);
-        if ( t == 0 )    break;    
         tau ++;
 
         for ( int i = 0 ; i < HS ; i ++ )                                                       // the before position; 0 for exon, 1 for intron
@@ -583,6 +557,7 @@ void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *in
 
             bwsum = log_sum_exp(l->log_values, mtau);
             xi_calculation(l, alpha, vit, info, ed, bwsum, t, j);
+            vit->xi_sum[j][t] = vit->xi[j];
             /*
                 second part
                     β(t)(m, 1) = amn * bn(Ot + 1) * Σ(d>=1) pn(d) * β(t + 1)(n , d)

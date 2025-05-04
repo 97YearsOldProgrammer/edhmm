@@ -25,16 +25,14 @@ def run(dir):
         with open(fasta, 'r') as file:
             # test whether the ouput from model is correct
             name, seq    = next(isoform2.read_fasta(fasta))
-            dons1, accs1 = isoform2.gtag_sites(seq, arg.flank, arg.min_exon)
+            dons1, accs1 = hints.mgtag_sites(seq, arg.flank, arg.min_exon, 39)
             dons2, accs2 = isoform2.hmm_sites(arg.hmm, fasta)
             dons = [don[0] for don in dons2]
             accs = [acc[0] for acc in accs2]
-            print(dons)
             print(dons1)
+            print(dons)
             print(accs)
             print(accs1)
-            print(accs2)
-            print(name)
             assert all([
     		    len(dons1) == len(dons),
     		    len(accs1) == len(accs),
