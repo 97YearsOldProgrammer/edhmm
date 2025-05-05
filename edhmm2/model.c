@@ -171,15 +171,16 @@ void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_d
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void basis_forward_algorithm(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info)
+void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info)
 {
     if (DEBUG == 1)     printf("Start forward algorithm basis calculation:");
 
     /*
-        [emprob]: bm(o1)                    aka: emission probability
-        [edprob]: pm(d)                     aka: explicit duration probability
-        [tau]   : residential time          aka: possible explicit duration
-        [sbps]  : bps where t=0             aka: start base pair
+        [emprob]:   bm(o1)                  aka: emission probability
+        [edprob]:   pm(d)                   aka: explicit duration probability
+        [tau]   :   residential time        aka: possible explicit duration
+        [sbps]  :   bps where t=0           aka: start base pair
+        [pi]:       product for emprob      aka: product for emission probability within intial emission probability
     */
     int     tau;
     int     tau_exon;
@@ -189,24 +190,56 @@ void basis_forward_algorithm(Lambda *l, Explicit_duration *ed,  Forward_algorith
     int     sbps;
     double  edprob;
     double  total;
+    double  pi = 1.0;
     /*
-        first part
-            a(1)(m, d) = pi(m) * bm(o1) * pm(d)
-    in our case        = bm(o1) * pm(d)
-    aka:      total    = emprob * edprob
-    */
-    tau = info->T - 2*FLANK - 2*ed->min_len_exon;
-    if      (tau > ed->max_len_exon)     tau_exon = ed->max_len_exon;
-    else                                 tau_exon = tau;
+        given initial formula
+            a(0)(m, d) = pi(m)  * bm(d) * pm(d)
 
-    sbps        = FLANK + ed->min_len_exon;
-    idx_emprob  = base4_to_int(info->numerical_sequence, sbps - 3, 4);
+        first part for exon basis
+        notice:         since initial min_len_exon bound are 100% exon; we need get there emission prob product
+                        correct explicit duration probability
+    in our case         = ∏(0 -> min_len_exon)bm(d) * pm(d+min_len_exon)
+    aka:          total = pi * edprob
+    */
+    for( int t = 0 ; t < ed->min_len_exon ; t++ )
+    {
+       idx_emprob = base4_to_int(info->numerical_sequence, t+FLANK-3, 4);
+       emprob     = l->B.exon[idx_emprob];
+       pi         = exp( log(pi)+log(emprob) );
+    }
+
+    // get boundary for first part
+    tau = info->T - 2*FLANK - 2*ed->min_len_exon;
+
+    if   (tau > ed->max_len_exon)   tau_exon = ed->max_len_exon;
+    else                            tau_exon = tau;
+    
+    sbps       = FLANK + ed->min_len_exon;
+    idx_emprob = base4_to_int(info->numerical_sequence, sbps-3, 4);
     emprob     = l->B.exon[idx_emprob];
 
-    for( int d = 0 ; d < tau_exon ; d ++)
+    for( int d = 0 ; d < (tau_exon - ed->min_len_exon) ; d ++ )
+    {
+        edprob = ed->exon[d+ed->min_len_exon-1];
+        if( edprob == 0.0 )     alpha->basis[0][d] = 0.0;
+        else
+        {
+            total = exp( log(pi)+log(edprob) );
+            alpha->basis[0][d] = total;
+        }
+    }
+    /*
+        second part for exon basis
+        since the bound comes until tau_exon - ed->min_len_exon for first part
+        second part directly use the initial formula
+            a(0)(m, d) = pi(m) * bm(d) * pm(d)
+    aka         total  = emprob * edprob
+    */
+    for( int d = tau_exon + ed->min_len_exon ; d < tau_exon ; d++ )
     {
         edprob = ed->exon[d];
-        if  (edprob == 0.0)     alpha->basis[0][d] = 0.0;
+
+        if( edprob == 0.0 )     alpha->basis[0][d] = 0.0;
         else
         {
             total = exp( log(emprob)+log(edprob) );
@@ -214,18 +247,18 @@ void basis_forward_algorithm(Lambda *l, Explicit_duration *ed,  Forward_algorith
         }
     }
     /*
-        for intron
+        for intron basis
     */
     if      (tau > ed->max_len_intron)   tau_intron = ed->max_len_intron;
     else                                 tau_intron = tau;
 
     emprob = l->B.intron[idx_emprob];
 
-    for( int d = 0 ; d < tau_intron ; d ++)
+    for( int d = 0 ; d < tau_intron ; d ++ )
     {
         edprob = ed->intron[d];
 
-        if (edprob == 0.0)     alpha->basis[1][d] = 0.0;
+        if( edprob == 0.0 )     alpha->basis[1][d] = 0.0;
         else
         {
             total = exp( log(emprob)+log(edprob) );
@@ -269,6 +302,7 @@ void forward_algorithm(Lambda *l, Forward_algorithm *alpha, Observed_events *inf
                 [total] : everything without bm(ot)          aka: α(t - 1)(m, d + 1) + α(t - 1)(n, 1) * a(nm) * pm(d)
             */
             bound = (i == 0) ? ed->max_len_exon : ed->max_len_intron;
+            
             if      (tau >= bound)  mtau = bound - 1;
             else                    mtau = tau;
             
@@ -371,84 +405,69 @@ void allocate_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_du
 {
     if (DEBUG == 1)     printf("Start Initialize Viterbi Algorithm");
 
-    int array_size = info->T - 2 * FLANK - 2 * ed->min_len_exon;
-
-    /*
-        recursive viterbi formula
-        γ(t) = y(t+1)(m) + sum(n != m) ( ξ(t+1)(m, n) - ξ(t+1)(n, n) )
-
-        for our model: degrade that formula
-        γ(t) = y(t+1)(m) + ξ(t+1)(m, n) - ξ(t+1)(n, n)
-
-        given definition of ξ
-        ξ(t)(m, n) = α(t - 1)(m, 1) * a(mn) * bn(Ot) * sum(d >= 1) (pn(d) β(t)(n, d))
-
-        in terms of t + 1
-        ξ(t+1)(m, n) = α(t)(m, 1) * a(mn) * bn(Ot + 1) * sum(d >= 1) (pn(d) β(t+1)(n, d))
-    */
-
-    vit->xi    = calloc( HS , sizeof(double) );
-    vit->gamma = malloc( HS * sizeof(double) );
-    vit->path  = malloc( array_size * sizeof(int) );
-    vit->xi_sum= malloc( HS * sizeof(double*) ); 
+    int sarray = info->T - 2 * FLANK - 2 * ed->min_len_exon;
+    vit->xi    = malloc( HS * sizeof(double*) );
     for (int i = 0 ; i < HS; i++ )
-        vit->xi_sum[i] = calloc( array_size , sizeof(double) );    
+        vit->xi[i] = calloc( sarray , sizeof(double) );    
     
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed, double backward_sum, int t, int type)
+void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed, double bw_sum, int t, int type)
 {
-    assert(type == 0 || type == 1);
-
     /*
-        [backward_sum]: (sum d>= 1)[ pn(d) * β(n, d)]
-            compute inside each layer of backward algorithm
-
-        [type]: exon 0 or intron 1
-            so we know which ξ(m, n) we shall update in vit
-        
-        formula
-        ξ(t)(m, n) = α(t - 1)(m, 1) * a(mn) * bn(ot) * (sum d>= 1)[ pn(d) * β(n, d)]   
-
-        update formula
-        ξ(t+1)(m, n) = α(t)(m, 1) * a(mn) * bn(o t+1) * (sum d>= 1)[ pn(d) * β(n, d)] 
+        input parameter
+        [bw_sum]: (sum d>= 1)[ pn(d) * β(n, d)]                      aka: backward sum
+        [type]:    exon 0 or intron 1
     */
-    double alpha_component;
-    double trans_prob;
-    int    index_trans_prob;
-    double emission_prob;
-    int    index_emission_prob;
+    assert(type == 0 || type == 1);
+    /*
+        [fw]:     α(t)(m, 1)
+        [tprob]:  a(mn)
+        [emprob]: bn(o t+1)
+        [xi]:     ξ
+        [bps]:    where the bps at
+    */
+    double fw;
+    double tprob;
+    int    idx_tprob;
+    double emprob;
+    int    idx_emprob;
     double xi;
     int    bps;
     /*
-        [alpha_component]: α(t)(m, 1)
-        [trans_prob]: a(mn)
-        [emission_prob]: bn(o t+1)
-        [xi]: ξ
+        formula
+        ξ(t)(m, n) = α(t - 1)(m, 1) * a(mn) * bn(ot) * (sum d>= 1)[ pn(d) * β(n, d)]   
+    aka:        xi = fw * tprob * emprob * bw_sum
     */
-    alpha_component = alpha->a[t - 1][type];
-
+    fw = alpha->a[t - 1][type];
     bps = t + FLANK + ed->min_len_exon;
     if (type == 0)
     {
-        index_trans_prob = base4_to_int(info->numerical_sequence, bps , 5);
-        trans_prob = l->A.dons[index_trans_prob];
+        idx_tprob = base4_to_int(info->numerical_sequence, bps , 5);
+        tprob     = l->A.dons[idx_tprob];
     }
     else
     {
-        index_trans_prob = base4_to_int(info->numerical_sequence, bps - 6, 6);
-        trans_prob = l->A.accs[index_trans_prob];
+        idx_tprob = base4_to_int(info->numerical_sequence, bps - 6, 6);
+        tprob     = l->A.accs[idx_tprob];
     }
         
-    index_emission_prob = base4_to_int(info->numerical_sequence, bps - 3, 4);
-    emission_prob = (type == 0) ? l->B.intron[index_emission_prob] : l->B.exon[index_emission_prob];
+    idx_emprob = base4_to_int(info->numerical_sequence, bps - 3, 4);
+    emprob     = (type == 0) ? l->B.intron[idx_emprob] : l->B.exon[idx_emprob];
 
-    if      (trans_prob == 0.0)         xi = 0.0;
-    else if (alpha_component == 0.0)    xi = 0.0;
-    else if (backward_sum == 0.0)       xi = 0.0;
-    else    xi = exp( log(trans_prob) + log(alpha_component) + log(emission_prob) + log(backward_sum) );
-    vit->xi[type] = xi;
+    if      (tprob  == 0.0)     xi = 0.0;
+    else if (fw     == 0.0)     xi = 0.0;
+    else if (bw_sum == 0.0)     xi = 0.0;
+    else    xi = exp( log(tprob) + log(fw) + log(emprob) + log(bw_sum) );
+    /*
+        big notice
+            when printing donor and acceptor site by filter non zero value
+            for  donor site probability it's actually t - 2 spot in real sequence
+    */
+    if      (type == 0)  vit->xi[type][t]       = xi;
+    else                 vit->xi[type][t - 2]   = xi;
+    vit->xi[type][t] = xi;
 }
 
 void viterbi_basis(Viterbi_algorithm *vit, Forward_algorithm *alpha)
@@ -537,8 +556,6 @@ void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *in
                 first part
                     backwardsum = Σ(d>=1) pn(d) * β(t + 1)(n , d)
             aka:    bwsum       = Σ(d>=1) edprob * pnode
-
-            note:   this can be coupled with ξ calculation for viterbi algorithm
             */
             bcheck = (i == 0) ? ed->max_len_exon : ed->max_len_intron;
             if      (tau > bcheck)   mtau = bcheck;
@@ -556,8 +573,6 @@ void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *in
             }
 
             bwsum = log_sum_exp(l->log_values, mtau);
-            xi_calculation(l, alpha, vit, info, ed, bwsum, t, j);
-            vit->xi_sum[j][t] = vit->xi[j];
             /*
                 second part
                     β(t)(m, 1) = amn * bn(Ot + 1) * Σ(d>=1) pn(d) * β(t + 1)(n , d)

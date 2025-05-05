@@ -63,12 +63,7 @@ typedef struct
 
 typedef struct
 {
-    double *xi;
-    double *gamma;
-    int *path;                        
-    double **xi_sum;
-    double xi_sum_exon;
-    double xi_sum_intron;
+    double **xi;
 } Viterbi_algorithm;
 
 // declared function //
@@ -99,7 +94,7 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 
 // forward algorithm //
 void allocate_alpha(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed);                        
-void basis_forward_algorithm(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info);
+void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info);
 void forward_algorithm(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
 
