@@ -417,16 +417,16 @@ void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit,
 {
     /*
         input parameter
-        [bw_sum]: (sum d>= 1)[ pn(d) * β(n, d)]                      aka: backward sum
+        [bw_sum]: (sum d>= 1)[ pn(d) * β(n, d)]             aka: backward sum
         [type]:    exon 0 or intron 1
     */
     assert(type == 0 || type == 1);
     /*
-        [fw]:     α(t)(m, 1)
-        [tprob]:  a(mn)
+        [fw]    : α(t)(m, 1)
+        [tprob] : a(mn)
         [emprob]: bn(o t+1)
-        [xi]:     ξ
-        [bps]:    where the bps at
+        [xi]    : ξ
+        [bps]   : where the bps at
     */
     double fw;
     double tprob;
@@ -470,24 +470,6 @@ void xi_calculation(Lambda *l, Forward_algorithm *alpha, Viterbi_algorithm *vit,
     vit->xi[type][t] = xi;
 }
 
-void viterbi_basis(Viterbi_algorithm *vit, Forward_algorithm *alpha)
-{
-    if (DEBUG == 1)     printf("Start assign basis for Viterbi Algorithm:");
-
-    /*
-        γ(t)(m) = sum(d>=1) α(t)(m, d)
-        at final t; there is only one α(t)(m, 1) existed
-    */
-    double gamma_exon;
-    double gamma_intron;
-    gamma_exon   = alpha->basis[0][0];
-    gamma_intron = alpha->basis[1][0];
-    vit->gamma[0] = gamma_exon;
-    vit->gamma[1] = gamma_intron;
-    
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
-
 void allocate_beta(Backward_algorithm *beta, Explicit_duration *ed)                             
 {
     if (DEBUG == 1)     printf("Start allocate memory for the backward algorithm:");
@@ -501,33 +483,104 @@ void allocate_beta(Backward_algorithm *beta, Explicit_duration *ed)
     */
 
     beta->basis    = malloc( HS * sizeof(double*) );                   
-    beta->basis[0] = calloc( ed->max_len_exon, sizeof(double) );
-    beta->basis[1] = calloc( ed->max_len_intron, sizeof(double));
+    beta->basis[0] = calloc( ed->max_len_exon  , sizeof(double) );
+    beta->basis[1] = calloc( ed->max_len_intron, sizeof(double) );
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void initial_backward_algorithm(Backward_algorithm *beta)
+void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta, Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed)
 {
-    if (DEBUG == 1)     printf("Start initialize backward algorithm:");
+    /*
+        similar to basis_fw_algo
+            that we need count emission probability for bw algo
 
-    for ( int i = 0 ; i < HS ; i++ )    beta->basis[i][0] = 1.0;
+        [emprob]: emission probability
+        [edprob]: explicit duration probability
+        [fw]    : α(t)(m, 1)
+        [tprob] : a(mn)
+        [total] : xi ξ
+    */
+    double emprob;
+    int    idx_emprob;
+    double edprob;
+    double pi = 1.0;
+    double total;
+    double fw;
+    double tprob;
+    int    idx_tprob;
+    /*   
+        computation
+            β T(m, d) = 1
+            β t(m, d) = bm(ot+1)*β T(m, d-1)
+    in short       pi = ∏(min_len_exon - 1) emission probability (lot of logic skip here, refer paper)
+    */
+    for( int t = info->T - FLANK - 1 ; t > info->T - FLANK - ed->min_len_exon ; t-- )
+    {
+        idx_emprob = base4_to_int(info->numerical_sequence, t-3, 4);
+        emprob     = l->B.exon[idx_emprob];
+        pi         = exp( log(pi)+log(emprob) );
+    }
+    /*
+        update value xi
+            ξ(T+1)(intron, exon) = α(T)(m, 1) * a(mn) * bn(oT+1) * ∏(min_len_exon - 1)bm(ot+1) * ed(prob)
+    aka          total = fw * tprob * emprob * pi
+    */
+    fw         = alpha->a[info->T-2*FLANK-2*ed->min_len_exon-1][0];
+    idx_emprob = base4_to_int(info->numerical_sequence, info->T-FLANK-ed->min_len_exon, 4);
+    emprob     = l->B.exon[idx_emprob];
+    idx_tprob  = base4_to_int(info->numerical_sequence, info->T-FLANK-ed->min_len_exon-6, 6);
+    tprob      = l->A.accs[idx_tprob];
+    edprob     = ed->exon[ed->min_len_exon-1];
+    /*
+        update posterior probability for donor site and acceptor site
+            actually basis for vit_algo
+    */
+    if      (tprob == 0.0)  total == 0.0;
+    else if (fw    == 0.0)  total == 0.0;
+    else                    total == exp( log(fw)+log(tprob)+log(emprob)+log(pi) );
 
-    if (DEBUG == 1)     printf("\tFinished\n");
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-1][0] = 0.0;
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-2][0] = total;
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-1][1] = 0.0;
+    /*
+        update initial beta probability
+            compute forward for beta->basis[exon][t]
+    */
+    beta->basis[0][ed->min_len_exon-1] = exp( log(emprob)+log(pi) );
+
+    if      (tprob == 0.0)  total == 0.0;
+    else                    total == exp( log(tprob)+log(emprob)+log(pi) );
+
+    beta->basis[1][0] = total;
 }
 
-void backward_algorithm(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit, Forward_algorithm *alpha)
+void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit, Forward_algorithm *alpha)
 {
     if (DEBUG == 1)     printf("Start Backward Algorithm:");
+    /*
+        [start]  : info->T-2*FLANK-2*ed->min_len_exon
+        [index]  : tracker for change of t(used as tau)
+        [bps]    : the base pair
+        [texon]  : tau for exon ; since tau for exon is min_len_exon longer
+        [tintron]: tau for intron
 
-    int len = info->T - 2 * FLANK - 2 * ed->min_len_exon;
-    int tau = 0;
-    int bps;
+        the loop
+            for( int t = start -1 -1 ; t > 0 ; t-- )
+            because we already compute start-1 in basis
+    */
+    int     start = info->T-2*FLANK-2 * ed->min_len_exon;
+    int     index = 1;
+    int     bps;
+    double  texon;
+    double  tintron;
 
-    for ( int t = len - 1; t > 0 ; t-- )
+    for( int t = start - 1 - 1; t > 0 ; t-- )
     {
-        bps = FLANK + ed->min_len_exon + t;
-        tau ++;
+        index++;
+        bps     = info->T-FLANK-ed->min_len_exon-index;
+        texon   = ed->min_len_exon+index;
+        tintron = index;
 
         for ( int i = 0 ; i < HS ; i ++ )                                                       // the before position; 0 for exon, 1 for intron
         {
