@@ -531,7 +531,7 @@ void print_splice_sites(Viterbi_algorithm *vit, Observed_events *info, Explicit_
 
     for (int i = 0; i < array_size; i++)
     {
-        if (vit->xi_sum[0][i] > epsilon)
+        if (vit->xi[0][i] > epsilon)
         {
             int pos = i + FLANK + ed->min_len_exon;
             printf("%d\t%.10f\n", pos - 1, vit->xi_sum[0][i]);

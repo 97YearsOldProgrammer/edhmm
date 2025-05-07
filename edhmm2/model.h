@@ -58,6 +58,7 @@ typedef struct
 
 typedef struct
 {
+    double **b;                         // beta for backward algorithm
     double **basis;                     // times of transition prob and emission prob
 } Backward_algorithm;                   
 
