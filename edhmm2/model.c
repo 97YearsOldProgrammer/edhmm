@@ -517,6 +517,7 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
     */
     beta->b[info->T-2*FLANK-2*ed->min_len_exon-1][1] = total;
     beta->basis[1][0] = total;
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-2][1] = total;
     /*
         case two
             exon | intron(min_exon_len) + FLANK
@@ -567,7 +568,8 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             [pnode] : β(t + 1)(n , d)                       aka: possible node
             [tprob] : a(mn)                                 aka: transition probability
             [emprob]: bn(ot+1)                              aka: emission probability
-            [bcheck]: boundary check                        
+            [bcheck]: boundary check            
+            [j]     : conjugated hidden state            
         */
         double bwsum;
         double edprob;
@@ -578,6 +580,7 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
         int    idx_emprob;
         double total;
         int    bcheck;
+        int    j;
         /*
             first part
                 β(t)(m, 1) = amn * bn(Ot + 1) * Σ(d>=1) pn(d) * β(t + 1)(n , d)
@@ -585,6 +588,7 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
         */
         for( int i = 0 ; i < HS ; i ++ )
         {
+            j = (i == 0) ? 1 : 0 ;
             /*
             boundary check
                 exon have intron + min_len_exon len of bound
@@ -626,32 +630,33 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             else if (bwsum == 0.0)  total = 0.0;
             else                    total = exp( log(tprob)+log(emprob)+log(bwsum) );
 
-            beta->b[info->T-2*FLANK-2*ed->min_len_exon-index][i] = total;
+            beta->b[info->T-2*FLANK-2*ed->min_len_exon-index][j] = total;
         }
         /*
             second part
                 β(t)(m, d) = bm(Ot+1) * β(t+1)(m, d - 1)    for all possible d > 1
         aka:         total = emprob * pnode
         */
-        for( int j = 0 ; j < HS ; j++ )
+        for( int k = 0 ; k < HS ; k++ )
         {
             idx_emprob = base4_to_int(info->numerical_sequence, bps - 2, 4);
-            emprob     = (j == 0) ? l->B.exon[idx_emprob] : l->B.intron[idx_emprob];
+            emprob     = (k == 0) ? l->B.exon[idx_emprob] : l->B.intron[idx_emprob];
 
-            tau = (j == 0) ? texon : tintron;
+            tau = (k == 0) ? texon : tintron;
 
             for( int d = 1 ; d < tau ; d++ )
-            {                   pnode = beta->basis[j][d-1];
+            {                   
+                pnode = beta->basis[k][d-1];
 
                 if      (pnode == 0.0)  total = 0.0;
                 else                    total = exp( log(emprob)+log(pnode) );
 
-                beta->basis[j][d] = total;
+                beta->basis[k][d] = total;
             } 
             /*
                 update back the transition state of layer
             */
-            beta->basis[j][0] = beta->b[info->T-2*FLANK-2*ed->min_len_exon-index][j];
+            beta->basis[k][0] = beta->b[info->T-2*FLANK-2*ed->min_len_exon-index][k];
         }
     }
     if (DEBUG == 1)     printf("\tFinished.\n");
@@ -687,14 +692,17 @@ void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_a
         exon | intron is impossible at last bps and also last-1 bps
     */
     int sarray = info->T-2*FLANK-2*ed->min_len_exon-1;
-    vit->xi[sarray][1]   = 0.0;
-    vit->xi[sarray-1][1] = 0.0;
+
+    vit->xi[sarray][0]   = 0.0;
+    vit->xi[sarray-1][0] = 0.0;
     /*
         intron | exon is possible 
         using basis_bw_algo
+        in similar manner
+        btw donor site have 1 bps delay
     */
-
-
+    vit->xi[sarray][1]   = 0.0;
+    vit->xi[sarray-1][1] = exp( log(vit->xi[sarray-1][1])+log(alpha->a[sarray][1]) );
 }
 
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit)
