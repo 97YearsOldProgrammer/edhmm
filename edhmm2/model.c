@@ -666,8 +666,7 @@ void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_a
 {   
     /*
         looking posterior prob bound from left hand side
-    */
-    /*
+
         it's impossible to have intron | exon at 1st bps and also 2nd bps
             since intron | exon when t = intron
             it's evaluating acceptor site pos prob at t-1
@@ -703,46 +702,53 @@ void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_a
     */
     vit->xi[sarray][1]   = 0.0;
     vit->xi[sarray-1][1] = exp( log(vit->xi[sarray-1][1])+log(alpha->a[sarray][1]) );
+    /*
+        for making symmetrical
+        update vit->xi[1][0] as donor site at pos 1
+    */
+    vit->xi[1][0] = exp( log(alpha->a[0][0]) + log(beta->b[1][0]) );
 }
 
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit)
 {
     /*
-        [fw]    :   α(t-1)(m, 1)
-        [idx_fw]:   the index for access fw component
-        [xi]    :   greek letter, what we want to update on
-    */
-    double xi;
-    double fw;
-    int    idx_fw;
-    /*
         update the posterior probability coupled inside bw algo
             ξ(t)(m, n) = α(t-1)(m, 1) * a(mn) * bn(ot) * Σ(n)bm(ot) * ed(prob)
     aka     ξ(t)(m, n) = α(t-1)(m, 1) * β(t)(m, 1)
-    +1    ξ(t+1)(m, n) = α(t)(m, 1) * β(t+1)(m, 1)      
-    which is        xi = fw * total
+    which is        xi = fw * bw
+
+        [fw]    :   α(t-1)(m, 1)
+        [bw]    :   β(t)(m, 1)
+        [xi]    :   greek letter, what we want to update on
     */
+    double fw;
+    double bw;
+    double xi;
     /*
-        donor site posterior probability
-            ξ(t)(exon, intron) = α(t-1)(exon, 1) * a(exon to intron) * bintron(ot) * Σ(n)bintron(ot) * ed(prob)
+        get donor site first ; aka exon | intron
+        this is easy; no shift calculation inside
+        for donor site prob at t
+        it would be α(t-1)(exon, 1) * β(t-1)(exon, 1)
+        this is kinda weird; btw correct indeed if deduct from paper
     */
-    for( int t = 0 ; t < info->T-2*FLANK-2*ed->min_len_exon ; t++ )
+    for( int t = 2 ; t < info->T-2*FLANK-2*ed->min_len_exon-2 ; t++ )
     {
-        fw = alpha->a[t][0];
+        fw = alpha->a[t-1][0];
+        bw = beta->b[t-1][0];
+        xi = exp( log(fw)+log(bw) );
+        vit->xi[t][0] = xi;
     }
-    idx_fw = info->T-2*FLANK-2*ed->min_len_exon;
-
-    idx_fw = info->T-2*FLANK-2*ed->min_len_exon-index;
-    fw     = alpha->a[idx_fw][i];
-
-           if          (total == 0.0)  xi = 0.0;
-           else if     (fw    == 0.0)  xi = 0.0;
-           else                        xi = exp( log(fw)+log(total) );
-
-           if      (i == 0)    idx_fw = idx_fw+1;
-           else                idx_fw = idx_fw-1;
-
-           vit->xi[i][idx_fw] = xi;
+    /*
+        get acceptor site first ; aka intron | exon
+        for acceptor site prob at t
+        it would be α(t-1)(intron, 1) * β(t-1)(intron, 1)
+    */
+    for( int t = 2 ; t < info->T-2*FLANK-2*ed->min_len_exon-2 ; t++ )
+    {
+        fw = alpha->a[t-1][1];
+        bw = beta->b[t-1][1];
+        
+    }
 }
 
 void free_beta(Backward_algorithm *beta)
