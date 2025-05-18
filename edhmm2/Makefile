@@ -1,7 +1,7 @@
 CC = gcc
 
-CFLAGS = -fsanitize=address -g
-#CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
+#CFLAGS = -fsanitize=address -g
+CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
 
 OBJS = main.o parser.o model.o output.o
 
@@ -37,6 +37,6 @@ debug: edhmm2
 
 # with default seq input
 test: edhmm2
-	./edhmm2 seq
+	./edhmm2 seq 1
 	
 .PHONY: all clean debug

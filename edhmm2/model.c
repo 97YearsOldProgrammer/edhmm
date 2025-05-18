@@ -29,14 +29,6 @@ void numerical_transcription(Observed_events *info, const char *seq)
     if (DEBUG == 1)     printf("\n");
 }
 
-void setup_initial_probability(Lambda *l)                               // actually no longer needed
-{
-    if (DEBUG == 1)     printf("Start getting initial probability down:");
-    l->pi = calloc(HS, sizeof(double) );                                // left-right HMM; only exon are 1
-    l->pi[0] = 1;                                                       // initial probability of exon are 1
-    if (DEBUG == 1)     printf("\t\u2713\n");
-}
-
 int power(int base, int exp)                                            // wtf, C don't have power for int
 {
     int result = 1;
@@ -509,8 +501,8 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
     tprob      = l->A.accs[idx_tprob];
     edprob     = ed->exon[ed->min_len_exon-1];
 
-    if      (tprob == 0.0)  total == 0.0;
-    else                    total == exp( log(tprob)+log(pi) );
+    if      (tprob == 0.0)  total = 0.0;
+    else                    total = exp( log(tprob)+log(pi) );
     /*
         case one
             intron | exon(min_exon_len) + FLANK
@@ -620,7 +612,7 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             else
             {
                 idx_tprob = base4_to_int(info->numerical_sequence, bps-5, 6);
-                tprob     = l->A.dons[idx_tprob];
+                tprob     = l->A.accs[idx_tprob];
             }
 
             idx_emprob = base4_to_int(info->numerical_sequence, bps-2, 4);
@@ -682,7 +674,7 @@ void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_a
             ξ(t)(exon, intron) = α(t-1)(exon, 1) * a(exon to intron) * bintron(ot) * Σ(n)bintron(ot) * ed(prob)
     aka     ξ(t)(exon, intron) = α(t-1)(exon, 1) * β(t)(intron, 1)
     */
-    vit->xi[0][0] = exp( log(vit->xi[0][0])+log(beta->b[0][1]) );
+    vit->xi[0][0] = exp( log(vit->xi[0][0])+log(beta->b[0][0]) );
     /*
         similarly
         looking posterior prob bound from right hand side
@@ -701,12 +693,12 @@ void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_a
         btw donor site have 1 bps delay
     */
     vit->xi[sarray][1]   = 0.0;
-    vit->xi[sarray-1][1] = exp( log(vit->xi[sarray-1][1])+log(alpha->a[sarray][1]) );
+    vit->xi[sarray-1][1] = exp( log(vit->xi[sarray-1][1])+log(alpha->a[sarray-1][1]) );
     /*
         for making symmetrical
         update vit->xi[1][0] as donor site at pos 1
     */
-    vit->xi[1][0] = exp( log(alpha->a[0][0]) + log(beta->b[1][0]) );
+    vit->xi[1][0] = exp( log(alpha->a[0][0])+log(beta->b[0][0]) );
 }
 
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit)
@@ -745,9 +737,10 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
     */
     for( int t = 2 ; t < info->T-2*FLANK-2*ed->min_len_exon-2 ; t++ )
     {
-        fw = alpha->a[t-1][1];
-        bw = beta->b[t-1][1];
-        
+        fw = alpha->a[t+1][1];
+        bw = beta->b[t+1][1];
+        xi = exp( log(fw)+log(bw) );
+        vit->xi[t][0] = xi;
     }
 }
 
@@ -762,13 +755,17 @@ void free_beta(Backward_algorithm *beta)
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void free_viterbi(Viterbi_algorithm *vit)
+
+void free_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed)
 {
     if (DEBUG == 1)     printf("Clearning up viterbi algorithm memory:");
 
+    int sarray = info->T - 2 * FLANK - 2 * ed->min_len_exon;
+    
+    for( int i = 0; i < sarray; i++ )
+        free(vit->xi[i]);
+    
     free(vit->xi);
-    free(vit->xi[0]);
-    free(vit->xi[1]);
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
