@@ -507,6 +507,8 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
         boundary
             calculate until we reach first donor site
     */
+
+    // find first accs site
     char *seq = info->original_sequence;
     int  accs;
 
@@ -518,7 +520,9 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
            break;
        }
     }
+    beta->rbound = accs;
 
+    // compute the bw exon until first accs site
     int sarray = info->T - 2 * FLANK - 2 * ed->min_len_exon;
     for( int t = info->T-FLANK ; t > accs; t-- )
     {
@@ -526,54 +530,37 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
         emprob     = l->B.exon[idx_emprob];
         pi         = exp( log(pi)+log(emprob) );
     }
-    
-    beta->basis[0][]
-    /*
-        no intron in that interval
-        updata calculation for array b
-    */
-    x = info->T - FLANK - ed->min_len_exon - accs;
 
+    // update the exon basis
+    int x = info->T - FLANK - accs;
     for( int t = 0 ; t < x ; t++ )
         beta->b[sarray-1-t][0] = 0.0;
-    /*
-        consider the intron basis
-    */
-    idx_tprob  = base4_to_int(info->numerical_sequence, accs-6, 6);
+    beta->basis[0][info->T-FLANK-accs] = pi;
+
+    // update the intron basis
+    idx_tprob  = base4_to_int(info->numerical_sequence, accs-5, 6);
     tprob      = l->A.accs[idx_tprob];
-    edprob     = ed->exon[ed->min_len_exon-1];
+    edprob     = ed->exon[info->T-FLANK-accs];
 
     if      (tprob == 0.0)  total = 0.0;
     else                    total = exp( log(tprob)+log(pi) );
-    /*
-        case one
-            intron | exon(min_exon_len) + FLANK
-    */
-    beta->b[info->T-2*FLANK-2*ed->min_len_exon-1][1] = total;
-    beta->basis[1][0] = total;
-    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-2][1] = total;
-    /*
-        case two
-            exon | intron(min_exon_len) + FLANK
-            this never gonna happen; s.t 0.0
-    */
-    beta->b[info->T-2*FLANK-2*ed->min_len_exon-1][0] = 0.0; 
-    /*
-        case three
-            exon | exon(min_exon_len) + FLANK 
-    */
-    idx_emprob = base4_to_int(info->numerical_sequence, info->T-FLANK-ed->min_len_exon-4, 4);
-    emprob     = l->B.exon[idx_emprob];
 
-    beta->basis[0][ed->min_len_exon-1] = exp( log(emprob)+log(pi) );
+    // for intron | exon(min_exon_len) ; FLANK
+    beta->basis[1][0] = total;
+    beta->b[info->T-2*FLANK-2*ed->min_len_exon-1][1] = total;
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-2][1] = total;
+    vit->xi[info->T-2*FLANK-2*ed->min_len_exon-1][1] = 0.0;
+    
+    // for exon | intron(min_exon_len) ; FLANK  : never gonna happen
+    beta->b[info->T-2*FLANK-2*ed->min_len_exon-1][0] = 0.0; 
 }
 
 void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit, Forward_algorithm *alpha)
 {
     if (DEBUG == 1)     printf("Start Backward Algorithm:");
     /*
-        [start]  : info->T-2*FLANK-2*ed->min_len_exon
-        [index]  : tracker for change of t(used as tau)
+        [start]  : first accs - 1
+        [delta]  : Δt ; change in time ; init 1 bc already compute in basis
         [bps]    : the base pair
         [tau]    : the residual time for different duration
         [texon]  : tau for exon ; since tau for exon is min_len_exon longer
@@ -583,51 +570,48 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             for( int t = start -1 -1 ; t > 0 ; t-- )
             because we already compute start-1 in basis
     */
-    int     start = info->T-2*FLANK-2 * ed->min_len_exon;
-    int     index = 1;
+    int     start = beta->rbound-1;
+    int     delta = 1;
     int     bps;
     int     tau;
     double  texon;
     double  tintron;
     
-    for( int t = start - 1 - 1; t > 0 ; t-- )
+    for( int t = start ; t > FLANK+ed->min_len_exon-1 ; t-- )
     {
-        index++;
-        bps     = info->T-FLANK-ed->min_len_exon-index;
-        texon   = ed->min_len_exon+index;
-        tintron = index;
-        /*
-            [bwsum] : see note in first part                aka: backward sum
-            [edprob]: pn(d)                                 aka: explicit duration probability
-            [pnode] : β(t + 1)(n , d)                       aka: possible node
-            [tprob] : a(mn)                                 aka: transition probability
-            [emprob]: bn(ot+1)                              aka: emission probability
-            [bcheck]: boundary check            
-            [j]     : conjugated hidden state            
-        */
-        double bwsum;
-        double edprob;
-        double pnode;
-        double tprob;
-        int    idx_tprob;
-        double emprob;
+        delta++;
+        bps     = t;
+
+        // update residual time
+        texon   = info->T - FLANK - beta->rbound + delta;
+        tintron = delta;
+
+        double bwsum;           // [bwsum] : see note in first part                aka: backward sum
+        double edprob;          // [edprob]: pn(d)                                 aka: explicit duration probability
+        double pnode;           // [pnode] : β(t + 1)(n , d)                       aka: possible node
+        double tprob;           // [tprob] : a(mn)                                 aka: transition probability
+        int    idx_tprob;   
+        double emprob;          // [emprob]: bn(ot+1)                              aka: emission probability
         int    idx_emprob;
         double total;
-        int    bcheck;
-        int    j;
+        int    bcheck;          // [bcheck]: boundary check
+        int    j;               // [j]     : conjugated hidden state
+
         /*
             first part
                 β(t)(m, 1) = amn * bn(Ot + 1) * Σ(d>=1) pn(d) * β(t + 1)(n , d)
         aka:         total = tprob * emprob * bwsum(sum edprob * all previous node)
+
+        in human language: 
+            update the basis for pos prob calculation before update the node
+            it's sum of all current existing node
         */
+        
         for( int i = 0 ; i < HS ; i ++ )
         {
-            j = (i == 0) ? 1 : 0 ;
-            /*
-            boundary check
-                exon have intron + min_len_exon len of bound
-                intron have just tau as len of bound
-            */
+            j = (i == 0) ? 1 : 0 ;  
+
+            // boundary check
             bcheck = (i == 0) ? ed->max_len_exon : ed->max_len_intron;
 
             if( i == 0 && texon   > bcheck )  texon   = bcheck;
@@ -664,12 +648,16 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             else if (bwsum == 0.0)  total = 0.0;
             else                    total = exp( log(tprob)+log(emprob)+log(bwsum) );
 
-            beta->b[info->T-2*FLANK-2*ed->min_len_exon-index][j] = total;
+            beta->b[info->T-2*FLANK-2*ed->min_len_exon-delta][j] = total;
         }
         /*
             second part
                 β(t)(m, d) = bm(Ot+1) * β(t+1)(m, d - 1)    for all possible d > 1
         aka:         total = emprob * pnode
+
+        in human language:
+            continue propagation of calculation on those basis
+            after collect them for posterior probability
         */
         for( int k = 0 ; k < HS ; k++ )
         {
