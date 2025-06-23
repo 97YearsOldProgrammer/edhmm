@@ -14,22 +14,22 @@ typedef struct                          // observed events with length T
 
 typedef struct
 {
-    double dons[5][4];                  // the emission probability for donor sites
-    double accs[6][4];                  // the emission probability for acceptor sites
-    double exon[256];                   // the emission probability for exon
-    double intron[256];                 // the emission probability for intron
+    double dons[4][3];                  // the emission probability for donor sites
+    double accs[5][3];                  // the emission probability for acceptor sites
+    double exon[255];                   // the emission probability for exon
+    double intron[255];                 // the emission probability for intron
 } Emission_matrix;
 
 typedef struct                          // degrade the sequence of conventional transition prob from donor 1-5 acceptor 1-6
 {
-    double dons[1024];                  // enumerating exon->intron ; aka donor site series
-    double accs[4096];                  // enumerating intron->exon ; aka acceptor site series                       
+    double dons[1023];                  // enumerating exon->intron ; aka donor site series
+    double accs[4095];                  // enumerating intron->exon ; aka acceptor site series                       
 } Transition_matrix;
 
 typedef struct 
 {
-    double prob[6];                     // for apc algorithm to calculate transition prob
-    int position[6];                    // for apc algorithm to get index to store in transition matrix
+    double prob[5];                     // for apc algorithm to calculate transition prob
+    int position[5];                    // for apc algorithm to get index to store in transition matrix
 } Apc;
 
 typedef struct
@@ -54,12 +54,14 @@ typedef struct
 {
     double **a;                         // alpha for forward algorithm
     double **basis;                     // each previous layer of calculation
+    int    lbound;                      // where the first donor site appear
 } Forward_algorithm;
 
 typedef struct
 {
     double **b;                         // beta for backward algorithm
     double **basis;                     // times of transition prob and emission prob
+    int    rbound;                      // where the first acceptor site appear
 } Backward_algorithm;                   
 
 typedef struct

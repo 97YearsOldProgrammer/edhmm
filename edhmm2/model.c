@@ -219,10 +219,11 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     sbps       = FLANK + ed->min_len_exon;
     idx_emprob = base4_to_int(info->numerical_sequence, sbps-3, 4);
     emprob     = l->B.exon[idx_emprob];
+    pi         = exp( log(pi)+log(emprob) );
 
-    for( int d = 0 ; d < (tau_exon - ed->min_len_exon) ; d ++ )
+    for( int d = 0 ; d < tau_exon-ed->min_len_exon ; d ++ )
     {
-        edprob = ed->exon[d+ed->min_len_exon-1];
+        edprob = ed->exon[d+ed->min_len_exon];
 
         if( edprob == 0.0 )
         {
@@ -234,56 +235,70 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
             total = exp( log(pi)+log(edprob) );
             alpha->basis[0][d] = total;
         }
-        if( d == 0 ) alpha->a[0][0] = total;
     }
+    alpha->a[0][0] = alpha->basis[0][0];
     /*
-        second part for exon basis
-        since the bound comes until tau_exon - ed->min_len_exon for first part
-        second part directly use the initial formula
-            a(0)(exon, d) = pi(m) * bm(d) * pm(d)
-    aka         total  = emprob * edprob
+        we need find the first donor site for further calculation
+        so that we know where does exon end and first intron appear
+        [donor]:    pos of first donor site
     */
-    for( int d = tau_exon - ed->min_len_exon ; d < tau_exon ; d++ )
-    {
-        edprob = ed->exon[d];
+    int donor;
+    char *seq = info->original_sequence;
 
-        if( edprob == 0.0 )
+    for( int i = FLANK+ed->min_len_exon ; i < info->T-2*FLANK-2*ed->min_len_exon ; i++)
+    {
+        if( seq[i] == 'G' && seq[i+1] == 'T' )
         {
-            total = 0.0;
-            alpha->basis[0][d] = 0.0;
+            donor = i;
+            break;
         }
-        else
+    }
+
+    alpha->lbound = donor + 1;
+    /*
+        continue calculation on exon basis until first donor site
+    */
+    int x = 0;
+    for( int i = FLANK+ed->min_len_exon + 1 ; i < donor+1 ; i++ )
+    {
+        idx_emprob = base4_to_int(info->numerical_sequence, i-3, 4);
+        emprob     = l->B.exon[idx_emprob];
+
+        x ++;
+        for( int d = 0 ; d < tau_exon-ed->min_len_exon-x ; d++ )
         {
-            total = exp( log(emprob)+log(edprob) );
-            alpha->basis[0][d] = total;
+            alpha->basis[0][d] = exp( log(alpha->basis[0][d+1])+log(emprob) ); 
         }
+        alpha->basis[0][0] = alpha->a[i-FLANK+ed->min_len_exon][0];
     }
     /*
         for intron basis
+        we need wait until the first donor site appear for continue calculation
             a(0)(intron, d) = α(-1)(exon, 0) * a(exon|intron) * bintron(o0) * pintron(d)
     aka               total = pi * tprob * emprob * edprob
     */
+    tau = tau - donor + FLANK + ed->min_len_exon;
     if      (tau > ed->max_len_intron)   tau_intron = ed->max_len_intron;
     else                                 tau_intron = tau;
 
-    emprob    = l->B.intron[idx_emprob];
-    idx_tprob = base4_to_int(info->numerical_sequence, FLANK+ed->min_len_exon, 5);
-    tprob     = l->A.dons[idx_tprob];
+    emprob     = l->B.intron[idx_emprob];
+    idx_tprob  = base4_to_int(info->numerical_sequence, donor, 5);
+    tprob      = l->A.dons[idx_tprob];
+    total      = exp( log(tprob)+log(alpha->a[donor-1][0])+log(emprob) );
 
-    if      ( tprob == 0.0 )  total = 0.0;
-    else                      total = exp( log(tprob)+log(pi)+log(emprob) );
-
-    for( int d = 0 ; d < tau_intron ; d ++ )
+    for( int d = 0 ; d < tau_intron ; d++ )
     {
         edprob = ed->intron[d];
 
         if      (edprob == 0.0) total = 0.0;
-        else if (tprob  == 0.0) total = 0.0;
-        else                    total = exp( log(tprob)+log(pi)+log(emprob)+log(edprob) );
+        else                    total = exp( log(total)+log(edprob) );
 
         alpha->basis[1][d] = total;
-        if( d == 0 ) alpha->a[0][1] = total;
     }
+    alpha->a[donor-FLANK-ed->min_len_exon][1] = alpha->basis[1][0]; 
+
+    for( int t = 0 ; t < donor-FLANK-ed->min_len_exon ; t++ )
+        alpha->a[t][1] = 0.0;
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
@@ -293,18 +308,17 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
     if (DEBUG == 1)     printf("Start computation for forward algorithm:");
 
     int sarray    = info->T-2*FLANK-2*ed->min_len_exon;
-    int start_bps = FLANK + ed->min_len_exon;
-    int tau       = sarray;
+    int tau       = sarray-alpha->lbound+FLANK+ed->min_len_exon;
     int bps;
     int mtau;
     int bound;
 
-    for ( int t = 1 ; t < sarray ; t ++ )
+    for( int t = alpha->lbound-FLANK-ed->min_len_exon ; t < sarray ; t ++ )
     {
-        bps = start_bps + t;                // which bps we are at 
+        bps = t + FLANK + ed->min_len_exon;                // which bps we are at 
         tau --;
 
-        for ( int i = 0 ; i < HS ; i ++ )
+        for( int i = 0 ; i < HS ; i ++ )
         {   
             /*
                 [bound] : for case that tau is restricted by the max_len of exon or intron
@@ -354,12 +368,12 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
             /*
                 second part
                     α(t)(m, d) = bm(ot) * ( α(t - 1)(m, d + 1) + α(t - 1)(n, 1) * a(nm) * pm(d) )
-            aka:         total = emprob * ( cnode + acount )   for d=1 < mtau
+            aka:         total = emprob * ( cnode + atrans )   for d=1 < mtau
                         atrans = ( tnode * tprob * edprob )
             */
             if( i == 0 )
             {
-               idx_tprob = base4_to_int(info->numerical_sequence , bps - 6, 6);
+               idx_tprob = base4_to_int(info->numerical_sequence , bps-6 , 6);
                tprob = l->A.accs[idx_tprob];
             }
             else
@@ -378,7 +392,7 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                 if      (edprob == 0.0)     atrans = 0.0;
                 else if (tprob  == 0.0)     atrans = 0.0;
                 else if (tnode  == 0.0)     atrans = 0.0;
-                else                        atrans = exp( log(tnode) + log(tprob) + log(edprob) );
+                else                        atrans = exp( log(tnode)+log(tprob)+log(edprob) );
                 l->log_values[1] = atrans;
 
                 total = log_sum_exp(l->log_values, 2);
@@ -397,8 +411,8 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                 if      (edprob == 0.0)     atrans = 0.0;
                 else if (tprob  == 0.0)     atrans = 0.0;
                 else if (tnode  == 0.0)     atrans = 0.0;
-                else                        atrans = exp( log(tnode) + log(tprob) + log(edprob) );
-                total = exp( log(atrans) + log(emprob) );
+                else                        atrans = exp( log(tnode)+log(tprob)+log(edprob) );
+                total = exp( log(atrans)+log(emprob) );
                 alpha->basis[i][bound - 1]  = total;
             }
         }
@@ -489,15 +503,43 @@ void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta
         computation
             β t(m, 1) = amn * bn(Ot + 1) * Σ(d>=1) pn(d) * β(t + 1)(n , d)
     aka         total = tprob * pi
+
+        boundary
+            calculate until we reach first donor site
     */
-    for( int t = info->T - FLANK - 1 ; t > info->T - FLANK - ed->min_len_exon - 1; t-- )
+    char *seq = info->original_sequence;
+    int  accs;
+
+    for( int i = info->T-FLANK-ed->min_len_exon-1; i >= 0; i-- )
+    {
+       if( seq[i] == 'A' && seq[i+1] == 'G' )
+       {
+           accs = i+1;
+           break;
+       }
+    }
+
+    int sarray = info->T - 2 * FLANK - 2 * ed->min_len_exon;
+    for( int t = info->T-FLANK ; t > accs; t-- )
     {
         idx_emprob = base4_to_int(info->numerical_sequence, t-3, 4);
         emprob     = l->B.exon[idx_emprob];
         pi         = exp( log(pi)+log(emprob) );
     }
+    
+    beta->basis[0][]
+    /*
+        no intron in that interval
+        updata calculation for array b
+    */
+    x = info->T - FLANK - ed->min_len_exon - accs;
 
-    idx_tprob  = base4_to_int(info->numerical_sequence, info->T-FLANK-ed->min_len_exon-6, 6);
+    for( int t = 0 ; t < x ; t++ )
+        beta->b[sarray-1-t][0] = 0.0;
+    /*
+        consider the intron basis
+    */
+    idx_tprob  = base4_to_int(info->numerical_sequence, accs-6, 6);
     tprob      = l->A.accs[idx_tprob];
     edprob     = ed->exon[ed->min_len_exon-1];
 
