@@ -133,7 +133,6 @@ void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_dura
 {
     if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
 
-    int sarray = info->T-2*FLANK-2*ed->min_len_exon;
     /*
         alpha->a[t][i]
         [t]: specific time among all observed events 
@@ -143,9 +142,10 @@ void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_dura
         each spot is storing a(t)(m, 1) ; based on 2006 implementation
         [m]: types of hidden state
     */
-    alpha->a = malloc ( (sarray) * sizeof(double*) ); 
+    int size_array = info->T;
+    alpha->a = malloc ( (size_array) * sizeof(double*) ); 
 
-    for( int i = 0 ; i < sarray; i++ )     
+    for( int i = 0 ; i < size_array; i++ )     
         alpha->a[i] = calloc( HS , sizeof(double) );                                        
     /*
         alpha->basis[i][d]
@@ -167,22 +167,19 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     if (DEBUG == 1)     printf("Start forward algorithm basis calculation:");
 
     /*
-        [emprob]:   bm(o1)                  aka: emission probability
         [tprob] :   a(mn)                   aka: transition probability
-        [edprob]:   pm(d)                   aka: explicit duration probability
-        [tau]   :   residential time        aka: possible explicit duration
         [sbps]  :   bps where t=0           aka: start base pair
         [pi]:       product for emprob      aka: product for emission probability within intial emission probability
     */
-    int     tau;
+    int     tau;                    // [tau]        :   residential time        aka: possible explicit duration
     int     tau_exon;
     int     tau_intron;
-    double  emprob;
+    double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
     int     idx_emprob;
-    double  tprob;
+    double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
     int     idx_tprob;
     int     sbps;
-    double  edprob;
+    double  edprob;                 // [ed_prob]    :   pm(d)                   aka: explicit duration probability
     double  total;
     double  pi = 1.0;
     /*
@@ -195,11 +192,27 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     in our case         = ∏(0 -> min_len_exon)bm(d) * pm(d+min_len_exon)
     aka:          total = pi * edprob
     */
+    
+    // find first donor site
+    int donor;
+    char *seq = info->original_sequence;
+
+    for( int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++)
+    {
+       if( seq[i] == 'G' && seq[i+1] == 'T' )
+       {
+           donor = i;
+           break;
+       }
+    }
+
+    // compute exon basis
+    for( int t = FLANK ; t < )
     for( int t = 0 ; t < ed->min_len_exon ; t++ )
     {
-       idx_emprob = base4_to_int(info->numerical_sequence, t+FLANK-3, 4);
-       emprob     = l->B.exon[idx_emprob];
-       pi         = exp( log(pi)+log(emprob) );
+       idx_em_prob = base4_to_int(info->numerical_sequence, t+FLANK-3, 4);
+       em_prob     = l->B.exon[idx_em_prob];
+       pi          = exp( log(pi)+log(em_prob) );
     }
     /*
         update component for first donor site
