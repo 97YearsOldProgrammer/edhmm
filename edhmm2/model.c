@@ -166,22 +166,17 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
 {
     if (DEBUG == 1)     printf("Start forward algorithm basis calculation:");
 
-    /*
-        [tprob] :   a(mn)                   aka: transition probability
-        [sbps]  :   bps where t=0           aka: start base pair
-        [pi]:       product for emprob      aka: product for emission probability within intial emission probability
-    */
     int     tau;                    // [tau]        :   residential time        aka: possible explicit duration
     int     tau_exon;
     int     tau_intron;
+    int     idx_em_prob;
+    int     idx_tran_prob;
+
     double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
-    int     idx_emprob;
     double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
-    int     idx_tprob;
-    int     sbps;
-    double  edprob;                 // [ed_prob]    :   pm(d)                   aka: explicit duration probability
-    double  total;
-    double  pi = 1.0;
+    double  ed_prob;                // [ed_prob]    :   pm(d)                   aka: explicit duration probability
+    double  alpha_sum = 1.0;
+
     /*
         given initial formula
             a(0)(m, d) = pi(m) * bm(d) * pm(d)
@@ -190,7 +185,7 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
         notice:         since initial min_len_exon bound are 100% exon; we need get there emission prob product
                         correct explicit duration probability
     in our case         = ∏(0 -> min_len_exon)bm(d) * pm(d+min_len_exon)
-    aka:          total = pi * edprob
+    aka:          total = pi * ed_prob
     */
     
     // find first donor site
@@ -205,113 +200,83 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
            break;
        }
     }
+    alpha->lbound = donor;
 
-    // compute exon basis
-    for( int t = FLANK ; t < )
-    for( int t = 0 ; t < ed->min_len_exon ; t++ )
-    {
-       idx_em_prob = base4_to_int(info->numerical_sequence, t+FLANK-3, 4);
-       em_prob     = l->B.exon[idx_em_prob];
-       pi          = exp( log(pi)+log(em_prob) );
-    }
-    /*
-        update component for first donor site
-            for exon(F+minex-1) | intron(F+minex)
-            get back to this at basis_pos_prob function
-    */
-    vit->xi[0][0] = pi;
-    /*
-        boundary check
-            for initial basis of forward algorithm
-    */
-    tau = info->T - 2*FLANK - 2*ed->min_len_exon;
+    // boundary check
+    tau = info->T-FLANK-ed->min_len_exon-FLANK;
 
     if   (tau > ed->max_len_exon)   tau_exon = ed->max_len_exon;
     else                            tau_exon = tau;
+
+    for( int i = 0 ; i < tau_exon ; i++ )
+    {
+        alpha->basis[0][i] = 1.0;
+    }
     
-    sbps       = FLANK + ed->min_len_exon;
-    idx_emprob = base4_to_int(info->numerical_sequence, sbps-3, 4);
-    emprob     = l->B.exon[idx_emprob];
-    pi         = exp( log(pi)+log(emprob) );
+    int num_iter = 0;
 
-    for( int d = 0 ; d < tau_exon-ed->min_len_exon ; d ++ )
+    for( int bps = FLANK ; bps < donor ; bps++)
     {
-        edprob = ed->exon[d+ed->min_len_exon];
+        num_iter++;
+        idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
+        em_prob     = l->B.exon[idx_em_prob];
 
-        if( edprob == 0.0 )
+        for( int i = 0 ; i < tau_exon ; i++ )
         {
-            total = 0.0;
-            alpha->basis[0][d] = total;
+            alpha->basis[0][i] = exp( log(alpha->basis[0][i])+log(em_prob) );
         }
-        else
-        {
-            total = exp( log(pi)+log(edprob) );
-            alpha->basis[0][d] = total;
-        }
-    }
-    alpha->a[0][0] = alpha->basis[0][0];
-    /*
-        we need find the first donor site for further calculation
-        so that we know where does exon end and first intron appear
-        [donor]:    pos of first donor site
-    */
-    int donor;
-    char *seq = info->original_sequence;
-
-    for( int i = FLANK+ed->min_len_exon ; i < info->T-2*FLANK-2*ed->min_len_exon ; i++)
-    {
-        if( seq[i] == 'G' && seq[i+1] == 'T' )
-        {
-            donor = i;
-            break;
-        }
+        alpha->basis[0][tau_exon] = 0.0;
+        tau_exon--; 
     }
 
-    alpha->lbound = donor + 1;
-    /*
-        continue calculation on exon basis until first donor site
-    */
-    int x = 0;
-    for( int i = FLANK+ed->min_len_exon + 1 ; i < donor+1 ; i++ )
+    // plug in the explicit duration probability
+    for( int i = 0 ; i < tau_exon+1 ; i ++ )
     {
-        idx_emprob = base4_to_int(info->numerical_sequence, i-3, 4);
-        emprob     = l->B.exon[idx_emprob];
-
-        x ++;
-        for( int d = 0 ; d < tau_exon-ed->min_len_exon-x ; d++ )
-        {
-            alpha->basis[0][d] = exp( log(alpha->basis[0][d+1])+log(emprob) ); 
-        }
-        alpha->basis[0][0] = alpha->a[i-FLANK+ed->min_len_exon][0];
+        ed_prob = ed->exon[num_iter-1];
+        if  ( ed_prob == 0.0 )  alpha->basis[0][i] = 0.0;
+        else                    alpha->basis[0][i] = exp( log(ed_prob)+log(alpha->basis[0][i]) );
     }
+
+    alpha->a[donor-1][0] = alpha->basis[0][0];
+
+    idx_em_prob = base4_to_int(info->numerical_sequence, donor-3, 4);
+    em_prob     = l->B.exon[idx_em_prob];
+
+    double next_node;
+    double curr_node;
+    for( int i = 0 ; i < tau_exon ; i ++ )
+    {
+        curr_node = alpha->basis[0][i];
+        next_node = alpha->basis[0][i+1];
+        curr_node = exp( log(next_node)+log(em_prob) );
+    }
+    alpha->basis[0][tau_exon] = 0.0;
+    alpha->a[donor][0] = alpha->basis[0][0];
+
     /*
         for intron basis
         we need wait until the first donor site appear for continue calculation
             a(0)(intron, d) = α(-1)(exon, 0) * a(exon|intron) * bintron(o0) * pintron(d)
     aka               total = pi * tprob * emprob * edprob
     */
-    tau = tau - donor + FLANK + ed->min_len_exon;
+    tau = info->T-FLANK-ed->min_len_exon-donor;
     if      (tau > ed->max_len_intron)   tau_intron = ed->max_len_intron;
     else                                 tau_intron = tau;
 
-    emprob     = l->B.intron[idx_emprob];
-    idx_tprob  = base4_to_int(info->numerical_sequence, donor, 5);
-    tprob      = l->A.dons[idx_tprob];
-    total      = exp( log(tprob)+log(alpha->a[donor-1][0])+log(emprob) );
+    em_prob         = l->B.intron[idx_em_prob];
+    idx_tran_prob   = base4_to_int(info->numerical_sequence, donor, 5);
+    tran_prob       = l->A.dons[idx_tran_prob];
+    alpha_sum       = exp( log(tran_prob)+log(alpha->a[donor-1-1][0])+log(em_prob) );
 
     for( int d = 0 ; d < tau_intron ; d++ )
     {
-        edprob = ed->intron[d];
+        ed_prob = ed->intron[d];
 
-        if      (edprob == 0.0) total = 0.0;
-        else                    total = exp( log(total)+log(edprob) );
-
-        alpha->basis[1][d] = total;
+        if  ( ed_prob == 0.0 )  alpha->basis[1][d] = 0.0;
+        else                    alpha->basis[1][d] = exp( log(alpha_sum)+log(ed_prob) );
     }
-    alpha->a[donor-FLANK-ed->min_len_exon][1] = alpha->basis[1][0]; 
 
-    for( int t = 0 ; t < donor-FLANK-ed->min_len_exon ; t++ )
-        alpha->a[t][1] = 0.0;
+    alpha->a[donor][1] = alpha->basis[1][0]; 
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
@@ -320,43 +285,28 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
 {
     if (DEBUG == 1)     printf("Start computation for forward algorithm:");
 
-    int sarray    = info->T-2*FLANK-2*ed->min_len_exon;
-    int tau       = sarray-alpha->lbound+FLANK+ed->min_len_exon;
-    int bps;
+    int start     = alpha->lbound+1;
+    int end       = info->T-FLANK- ed->min_len_exon;
+    int tau       = start-end+1;
     int mtau;
     int bound;
 
-    for( int t = alpha->lbound-FLANK-ed->min_len_exon ; t < sarray ; t ++ )
+    for( int bps = start ; bps < end ; bps ++ )
     {
-        bps = t + FLANK + ed->min_len_exon;                // which bps we are at 
-        tau --;
-
-        for( int i = 0 ; i < HS ; i ++ )
+        // hidden state
+        for( int hs = 0 ; hs < HS ; hs ++ ) 
         {   
-            /*
-                [bound] : for case that tau is restricted by the max_len of exon or intron
-                [tau]   : the residual/remaining time for explicit duration
-
-                [mtau]  : result from boundary check         aka: modified tau
-                [tprob] : a(nm)                              aka: transition_prob
-                [tnode] : α(t - 1)(n , 1)                    aka: transition_node
-                [atrans]: α(t - 1)(n , 1) * a(nm)            aka: alpha_trans == trans_prob * node_trans
-                [edprob]:  pm(d)                             aka: explicit duration prob
-                [cnode] : α(t - 1)(m, d + 1)                 aka: continue_node
-                [emprob]: bm(ot)                             aka: emission_prob
-                [j]     : conjudated hidden state            aka: i = exon; j = intron | i = intron; j = exon
-                [total] : everything without bm(ot)          aka: α(t - 1)(m, d + 1) + α(t - 1)(n, 1) * a(nm) * pm(d)
-            */
-            double tprob;
-            int    idx_tprob;
-            double tnode;
+            double tran_prob;       // [tran_prob]  : a(nm)                 aka: transition_prob
             double atrans;
-            double edprob;
+            double ed_prob;         // [ed_prob]    :  pm(d)                aka: explicit duration prob
             double cnode;
-            double emprob;
-            int    idx_emprob;
-            int    j = (i == 0) ? 1 : 0;
-            double total;
+            double em_prob;         // [em_prob]    : bm(ot)                aka: emission_prob
+
+            int    idx_tran_prob;
+            int    idx_em_prob;
+            int    con_hs;          //[con_hs]      : conjudated hidden state
+
+            double alpha_sum;
             /*
                 boundary check
             */
