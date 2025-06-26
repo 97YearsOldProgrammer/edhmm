@@ -95,7 +95,7 @@ void initialize_donor_transition_matrix(Lambda *l, Apc *a, int depth)   // set t
 
 void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth)// set the depth to 0 initially
 {   
-    if (depth == 6)                                                     // exit recursion; calculation start
+    if(depth == 6)                                                      // exit recursion; calculation start
     {
         int index = base4_to_int(a->position, 0, 6);                    // this is where we plan to store that value
         double value = total_prob(a->prob, 6);                          // get total prob
@@ -103,7 +103,7 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth)// set t
         return;
     }
 
-    for ( int i = 0; i < 4 ; i++ )
+    for( int i = 0; i < 4 ; i++ )
     {
         double p = l->B.accs[depth][i];                                 // get the exon emission prob for current node
         a->prob[depth] = p;                                             // record the emission prob inside the array
@@ -114,14 +114,17 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth)// set t
 
 double log_sum_exp(double *array, int n) 
 {
+    if(n <= 0)  return 0.0;
+
     double max = array[0];
-    for ( int i = 1 ; i < n ; i++ )
+    double sum = 0.0;
+
+    for( int i = 1 ; i < n ; i++ )
     {
         if( array[i] > max )     max = array[i];                  
     }
 
-    double sum = 0.0;
-    for( int i = 0 ; i < n ; i++)
+    for( int i = 0 ; i < n ; i++ )
     {
         sum += exp(array[i] - max);
     }
@@ -129,38 +132,9 @@ double log_sum_exp(double *array, int n)
     return max + log(sum);       
 }
 
-void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed)                            
-{
-    if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
-
-    /*
-        alpha->a[t][i]
-        [t]: specific time among all observed events 
-        [i]: [0] for exon ; [1] for intron
-
-
-        each spot is storing a(t)(m, 1) ; based on 2006 implementation
-        [m]: types of hidden state
-    */
-    int size_array = info->T;
-    alpha->a = malloc ( (size_array) * sizeof(double*) ); 
-
-    for( int i = 0 ; i < size_array; i++ )     
-        alpha->a[i] = calloc( HS , sizeof(double) );                                        
-    /*
-        alpha->basis[i][d]
-        [i]: [0] for exon ; [1] for intron
-        [d]: max duration for exon or intron ; depends on [i]
-
-        each one assign 1D array for each t - 1 layer of all possible D computation
-        based on forward algorithm; each at(m, d) partially depends one a(t-1)(m, d+1)
-    */
-    alpha->basis    = malloc( HS * sizeof(double*) );                   
-    alpha->basis[0] = calloc( ed->max_len_exon, sizeof(double) );
-    alpha->basis[1] = calloc( ed->max_len_intron, sizeof(double));
-
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
+/* ==================================================== *
+ * ================= Computation Area ================= *
+ * ==================================================== */
 
 void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info, Viterbi_algorithm *vit)
 {
@@ -285,153 +259,103 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
 {
     if (DEBUG == 1)     printf("Start computation for forward algorithm:");
 
+    /* 
+    Forward recursion formula for duration-based HMM:
+
+    α_t(m, d) =   α_(t-1)(m, d+1) * b_m(o_t)
+            + [sum over n ≠ m of α_(t-1)(n, 1) * a_nm] * b_m(o_t) * p_m(d)
+
+    Where:
+        - t     = current time step
+        - m     = current state
+        - d     = duration in current state
+        - α_t   = forward probability
+        - b_m   = emission probability for state m at time t
+        - a_nm  = transition probability from state n to m
+        - p_m(d)= duration probability of staying in state m for d steps
+
+    Logic:
+        1. If you're still in the same state (m), just extend duration: 
+               take α from previous time, same state, one longer duration.
+        2. Or you just transitioned into state m from another state n:
+               sum over all other states n, and get their α with duration 1,
+               multiply by transition probability from n to m,
+               then add emission and duration prob for new state m.
+    
+        -- written by ChatGpt, btw logic all been verified by Gong
+    */
+
     int start     = alpha->lbound+1;
     int end       = info->T-FLANK- ed->min_len_exon;
     int tau       = start-end+1;
-    int mtau;
     int bound;
 
     for( int bps = start ; bps < end ; bps ++ )
-    {
+    {   
+        tau--;
         // hidden state
         for( int hs = 0 ; hs < HS ; hs ++ ) 
         {   
             double tran_prob;       // [tran_prob]  : a(nm)                 aka: transition_prob
             double atrans;
-            double ed_prob;         // [ed_prob]    :  pm(d)                aka: explicit duration prob
-            double cnode;
+            double ed_prob;         // [ed_prob]    : pm(d)                 aka: explicit duration prob
             double em_prob;         // [em_prob]    : bm(ot)                aka: emission_prob
+            double tran_node;       // [tran_node]  : transition node
+            double cont_node;       // [cont_node]  : continue node which is a(t-1)(m, d+1)
 
             int    idx_tran_prob;
             int    idx_em_prob;
-            int    con_hs;          //[con_hs]      : conjudated hidden state
+            int    con_hs;          // [con_hs]     : conjudated hidden state
 
-            double alpha_sum;
-            /*
-                boundary check
-            */
-            bound = (i == 0) ? ed->max_len_exon : ed->max_len_intron;
+            // boundary check
+            bound = (hs == 0) ? ed->max_len_exon : ed->max_len_intron;
+            if      (tau >= bound)  tau = bound;
             
-            if      (tau >= bound)  mtau = bound;
-            else                    mtau = tau;
-            /*
-                first part
-                    α(t)(m, 1) = α(t - 1)(m, 2) * bm(ot)
-            aka:    total      = cnode * emprob
-            */
-            idx_emprob = base4_to_int(info->numerical_sequence, bps - 3, 4);
-            emprob     = (i == 0) ? l->B.exon[idx_emprob] : l->B.intron[idx_emprob];
-            cnode      = alpha->basis[i][1];
+            con_hs = (hs == 0) ? 1 : 0;
 
-            if      (cnode  == 0.0)     total = 0.0;
-            else                        total = exp( log(cnode)+log(emprob) );
+            for( int i = 0 ; i < tau ; i++ )
+            {   // access previous node
+                cont_node = (i != tau-1) ? alpha->basis[hs][i+1] : 0.0;
+                tran_node = alpha->a[bps-1][con_hs];
 
-            alpha->a[t][i]     = total;
-            alpha->basis[i][0] = total;
-            /*
-                second part
-                    α(t)(m, d) = bm(ot) * ( α(t - 1)(m, d + 1) + α(t - 1)(n, 1) * a(nm) * pm(d) )
-            aka:         total = emprob * ( cnode + atrans )   for d=1 < mtau
-                        atrans = ( tnode * tprob * edprob )
-            */
-            if( i == 0 )
-            {
-               idx_tprob = base4_to_int(info->numerical_sequence , bps-6 , 6);
-               tprob = l->A.accs[idx_tprob];
+                // prepare computation
+                idx_em_prob     = base4_to_int(info->numerical_sequence, bps-3, 4);
+                em_prob         = (hs == 0) ? l->B.exon[idx_em_prob] : l->B.intron[idx_em_prob];
+
+                if(hs == 0)
+                {   // acceptor site for intron|exon
+                    idx_tran_prob   = base4_to_int(info->numerical_sequence, bps-6, 6);
+                    tran_prob       = l->A.accs[idx_tran_prob];
+                }
+                else
+                {   // donor site for exon|intron 
+                    idx_tran_prob   = base4_to_int(info->numerical_sequence, bps, 5);
+                    tran_prob       = l->A.dons[idx_tran_prob];
+                }
+
+                // update continuation
+                if  (cont_node == 0.0)  alpha->basis[hs][i] = 0.0;
+                else                    alpha->basis[hs][i] = exp( log(cont_node)+log(em_prob) );
+                
+                // get explicit duration probability
+                ed_prob = (hs == 0) ? ed->intron[i] : ed->exon[i];
+
+                // update transition
+                if      (tran_node == 0.0)  alpha->basis[hs][i] += 0.0;
+                else if (tran_prob == 0.0)  alpha->basis[hs][i] += 0.0;
+                else if (ed_prob   == 0.0)  alpha->basis[hs][i] += 0.0;
+                else{   // make stable numerical addition; use log_exp_sum trick
+                    double logs[2] = {  
+                        log(alpha->basis[hs][i]),                                   // part of continue 
+                        (log(tran_node)+log(tran_prob)+log(ed_prob)+log(em_prob))   // part of transition
+                    };
+                    alpha->basis[hs][i] = log_sum_exp(logs, 2);
+                }
             }
-            else
-            {
-               idx_tprob = base4_to_int(info->numerical_sequence , bps , 5);
-               tprob = l->A.dons[idx_tprob];
-            }
-            tnode = alpha->a[t - 1][j];
-
-            for( int d = 1 ; d < mtau - 1 ; d ++ )
-            {   
-                cnode = alpha->basis[i][d + 1];
-                l->log_values[0] = cnode;
-
-                edprob = (i == 0) ? ed->exon[d] : ed->intron[d];
-                if      (edprob == 0.0)     atrans = 0.0;
-                else if (tprob  == 0.0)     atrans = 0.0;
-                else if (tnode  == 0.0)     atrans = 0.0;
-                else                        atrans = exp( log(tnode)+log(tprob)+log(edprob) );
-                l->log_values[1] = atrans;
-
-                total = log_sum_exp(l->log_values, 2);
-                alpha->basis[i][d] = exp( log(total) + log(emprob) );
-            }
-            /*
-                third part
-                    α(t)(m, d) = bm(ot) * ( α(t - 1)(n, 1) * a(nm) * pm(d) )
-            aka:    total      = emprob * atrans
-                    atrans     = ( tnode * tprob * edprob )     at d = 
-                    whenever for longer sequence
-            */
-            if( mtau != tau )
-            {
-                edprob = (i == 0) ? ed->exon[bound - 1] : ed->intron[bound - 1];
-                if      (edprob == 0.0)     atrans = 0.0;
-                else if (tprob  == 0.0)     atrans = 0.0;
-                else if (tnode  == 0.0)     atrans = 0.0;
-                else                        atrans = exp( log(tnode)+log(tprob)+log(edprob) );
-                total = exp( log(atrans)+log(emprob) );
-                alpha->basis[i][bound - 1]  = total;
-            }
+            // save header of basis for posterior prob
+            alpha->a[bps][hs] = alpha->basis[hs][0];
         }
     }
-
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
-
-void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed)
-{
-    if (DEBUG == 1)     printf("Clearing up forward algorithm memory:");
-    
-    int sarray = info->T-2*FLANK-2*ed->min_len_exon;
-    for( int i = 0; i < sarray; i++ )
-        free(alpha->a[i]);
-    free(alpha->a);
-    free(alpha->basis[0]);
-    free(alpha->basis[1]);
-    free(alpha->basis);
-
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
-
-void allocate_vit(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed)
-{
-    if (DEBUG == 1)     printf("Start Initialize Viterbi Algorithm");
-
-    int sarray = info->T;
-    vit->xi = malloc ( (sarray) * sizeof(double*) ); 
-    for( int i = 0 ; i < sarray; i++ )     
-        vit->xi[i] = calloc( HS , sizeof(double) );       
-    
-    if (DEBUG == 1)     printf("\tFinished\n");
-}
-
-void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info)                             
-{
-    if (DEBUG == 1)     printf("Start allocate memory for the backward algorithm:");
-                                    
-    /*
-        β->basis[i][d]
-        [i]: [0] for exon ; [1] for intron
-        [d]: max duration for exon or intron ; depends on [i]
-
-        each one assign 1D array for each t - 1 layer of all possible D computation
-    */
-
-    beta->basis    = malloc( HS * sizeof(double*) );
-    beta->basis[0] = calloc( ed->max_len_exon  , sizeof(double) );
-    beta->basis[1] = calloc( ed->max_len_intron, sizeof(double) );
-
-    int size_array = info->T;
-    beta->b = malloc( (size_array) * sizeof(double*) ); 
-
-    for( int i = 0 ; i < size_array; i++ )     
-        beta->b[i] = calloc( HS , sizeof(double) );  
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
@@ -555,7 +479,7 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
 
                 if      (ed_prob  == 0.0)   l->log_values[d] = 0.0;
                 else if (pre_node == 0.0)   l->log_values[d] = 0.0;
-                else                        l->log_values[d] = exp( log(pre_node)+log(ed_prob) );
+                else                        l->log_values[d] = log(pre_node)+log(ed_prob);
             }
 
             bw_sum = log_sum_exp(l->log_values, tau);
@@ -618,6 +542,81 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
 
     if (DEBUG == 1)     printf("\tFinished.\n");
 }
+
+/* ==================================================== *
+ * ================ Memory and Cleanup ================ *
+ * ==================================================== */
+
+ void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed)                            
+{
+    if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
+
+    // alpha->a[t][i]
+    int size_array = info->T;
+    alpha->a = malloc ( (size_array) * sizeof(double*) );           // [t]: specific time among all observed events 
+
+    for( int i = 0 ; i < size_array; i++ )                          // [0] for exon ; [1] for intron
+        alpha->a[i] = calloc( HS , sizeof(double) );                // each spot is storing a(t)(m, 1)
+               
+    // alpha->basis[i][d]
+    alpha->basis    = malloc( HS * sizeof(double*) );               // [0] for exon ; [1] for intron
+
+    // max duration for exon or intron
+    alpha->basis[0] = calloc( ed->max_len_exon, sizeof(double) );
+    alpha->basis[1] = calloc( ed->max_len_intron, sizeof(double));
+
+    if (DEBUG == 1)     printf("\tFinished\n");
+}
+
+void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed)
+{
+    if (DEBUG == 1) printf("Clearing up forward algorithm memory:\n");
+
+    int size_array = info->T;
+    for (int i = 0; i < size_array; i++) 
+        free(alpha->a[i]);
+
+    free(alpha->a);
+    free(alpha->basis[0]);
+    free(alpha->basis[1]);
+    free(alpha->basis);
+
+    if (DEBUG == 1) printf("\tFinished\n");
+}
+
+void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info)                             
+{
+    if (DEBUG == 1)     printf("Start allocate memory for the backward algorithm:");
+                                    
+    // allocate basis
+    beta->basis    = malloc( HS * sizeof(double*) );                    // [0] for exon ; [1] for intron
+    beta->basis[0] = calloc( ed->max_len_exon  , sizeof(double) );      // max duration for exon or intron
+    beta->basis[1] = calloc( ed->max_len_intron, sizeof(double) );
+
+    // allocate storage array
+    int size_array = info->T;
+    beta->b = malloc( (size_array) * sizeof(double*) );                 // [0] for exon ; [1] for intron
+    for( int i = 0 ; i < size_array; i++ )                             
+        beta->b[i] = calloc( HS , sizeof(double) );  
+
+    if (DEBUG == 1)     printf("\tFinished\n");
+}
+
+void allocate_vit(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed)
+{
+    if (DEBUG == 1)     printf("Start Initialize Viterbi Algorithm");
+
+    int sarray = info->T;
+    vit->xi = malloc ( (sarray) * sizeof(double*) ); 
+    for( int i = 0 ; i < sarray; i++ )     
+        vit->xi[i] = calloc( HS , sizeof(double) );       
+    
+    if (DEBUG == 1)     printf("\tFinished\n");
+}
+
+
+
+
 
 void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed)
 {   
