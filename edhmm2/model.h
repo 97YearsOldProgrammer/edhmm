@@ -67,52 +67,48 @@ typedef struct
 typedef struct
 {
     double **xi;
-} Viterbi_algorithm;
+} Pos_prob;
 
-// declared function //
+/* ======================= Function Declarations ======================= */
 
-// seq reading //
+/* ===== Sequence reading ===== */
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
 
-// input model //
+/* ===== Model input parsers ===== */
 void donor_parser(Lambda *l, char *filename);
 void acceptor_parser(Lambda *l, char *filename);
 void exon_intron_parser(Lambda *l, char *filename, int digit);
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit);
 
-// computation function //
-int power(int base, int exp);
-int base4_to_int(int *array, int beg, int length);
+/* ===== Computation utilities ===== */
+int    power(int base, int exp);
+int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
-double safe_log(double x);
 double log_sum_exp(double *logs, int n);
 
-// suffix algorithm to get all transition prob // 
+/* ===== Transition matrix initialization ===== */
 void initialize_donor_transition_matrix(Lambda *l, Apc *a, int depth);
 void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 
-// forward algorithm //
-void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed);                            
-void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info, Viterbi_algorithm *vit);
+/* ===== Forward algorithm ===== */
+void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
+void basis_fw_algo(Lambda *l, Explicit_duration *ed, Forward_algorithm *alpha, Observed_events *info);
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
-void free_alpha(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
+void free_alpha(Observed_events *info, Forward_algorithm *alpha);
 
-// viterbi algorithm //
-void allocate_vit(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed);
-void free_viterbi(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed);
+/* ===== Backward algorithm ===== */
+void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info);
+void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed);
+void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed);
+void free_beta(Observed_events *info, Backward_algorithm *beta);
 
-// backward algorithm //
-void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info);                            
-void basis_bw_algo(Lambda *l, Forward_algorithm *alpha, Backward_algorithm *beta, Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed);
-void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit, Forward_algorithm *alpha);
-void free_beta(Backward_algorithm *beta);
+/* ===== Posterior probabilities ===== */
+void allocate_pos(Pos_prob *pos, Observed_events *info);
+void free_pos(Pos_prob *pos, Observed_events *info);
+void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Pos_prob *pos);
 
-// pos prob
-void basis_pos_prob(Viterbi_algorithm *vit, Forward_algorithm *alpha, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed);
-void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Viterbi_algorithm *vit);
-
-// output section
-void print_splice_sites(Viterbi_algorithm *vit, Observed_events *info, Explicit_duration *ed);
+/* ===== Output ===== */
+void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
 
 #endif

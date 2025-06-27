@@ -54,59 +54,61 @@ int main(int argc, char *argv[])
     Explicit_duration ed;
     Forward_algorithm fw;
     Backward_algorithm bw;
-    Viterbi_algorithm vit;
+    Pos_prob pos;
 
-    // get sequence //
+    // Load input sequence
     read_sequence_file(seq_input, &info);
     numerical_transcription(&info, info.original_sequence);
-    
-    // initialize data
-    donor_parser(&l, don_emission);                            // donor emission prob
-    acceptor_parser(&l, acc_emission);                         // acceptor emission prob
-    exon_intron_parser(&l, exon_emission, 0);                  // exon emission prob
-    exon_intron_parser(&l, intron_emission, 1);                // intron emission prob
-    explicit_duration_probability(&ed, Ped_exon,   0);         // exon ed prob
-    explicit_duration_probability(&ed, Ped_intron, 1);         // intron ed prob
 
-    // transition matrix computation
+    // Load model files
+    donor_parser(&l, don_emission);
+    acceptor_parser(&l, acc_emission);
+    exon_intron_parser(&l, exon_emission, 0);
+    exon_intron_parser(&l, intron_emission, 1);
+    explicit_duration_probability(&ed, Ped_exon,   0);
+    explicit_duration_probability(&ed, Ped_intron, 1);
 
-    if(DEBUG == 1)  printf("Start calculating transition probability for donor sites:");
-    initialize_donor_transition_matrix(&l, &apc, 0);           // setup transition prob for exon to intron
-    if(DEBUG == 1)  printf("\tFinished\n");
+    // Transition matrix
+    if (DEBUG == 1) printf("Start calculating transition probability for donor sites:\n");
+    initialize_donor_transition_matrix(&l, &apc, 0);
+    if (DEBUG == 1) printf("\tFinished\n");
 
-    if(DEBUG == 1)  printf("Start calculating transition probability for acceptor sites:");
-    initialize_acceptor_transition_matrix(&l, &apc, 0);        // setup transition prob for intron to exon
-    if(DEBUG == 1)  printf("\tFinished\n");
+    if (DEBUG == 1) printf("Start calculating transition probability for acceptor sites:\n");
+    initialize_acceptor_transition_matrix(&l, &apc, 0);
+    if (DEBUG == 1) printf("\tFinished\n");
 
-    // initialize data
+    // Allocate memory
     allocate_fw(&info, &fw, &ed);
     allocate_bw(&bw, &ed, &info);
-    allocate_vit(&vit, &info, &ed);
-    
-    basis_fw_algo(&l, &ed, &fw, &info, &vit);
+    allocate_pos(&pos, &info);
+
+    // Forward and Backward algorithms
+    basis_fw_algo(&l, &ed, &fw, &info);
     fw_algo(&l, &fw, &info, &ed);
+    basis_bw_algo(&l, &bw, &info, &ed);
+    bw_algo(&l, &bw, &info, &ed);
 
-    basis_bw_algo(&l, &fw, &bw, &vit, &info, &ed);
-    bw_algo(&l, &bw, &info, &ed, &vit, &fw);
+    // Posterior probability
+    pos_prob(&bw, &fw, &info, &ed, &pos);
 
-    basis_pos_prob(&vit, &fw, &bw, &info, &ed);
-    pos_prob(&bw, &fw, &info, &ed, &vit);
+    // Output
+    if (hmm_output == 0)
+        print_splice_sites(&pos, &info, &ed);
 
-    if(hmm_output == 0)     print_splice_sites(&vit, &info, &ed);
-    if(hmm_output == 1)
-    {
-        print_splice_sites(&vit, &info, &ed);
-        printf("666\n");
-        printf("%f\n", fw.basis[0][0]);
-        printf("%f", fw.basis[1][0]);
+    if (hmm_output == 1) {
+        print_splice_sites(&pos, &info, &ed);
+        printf("=== Debug Forward Basis ===\n");
+        printf("fw.basis[0][0] (exon)  = %.10f\n", fw.basis[0][0]);
+        printf("fw.basis[1][0] (intron)= %.10f\n", fw.basis[1][0]);
     }
 
-    // free memory
-    free_alpha(&info, &fw, &ed);
-    free_beta(&bw);
-    free_viterbi(&vit, &info, &ed);
+    // Cleanup
+    free_alpha(&info, &fw);
+    free_beta(&info, &bw);
+    free_pos(&pos, &info);
     free(info.original_sequence);
     free(info.numerical_sequence);
+
 
     return 0;
 }

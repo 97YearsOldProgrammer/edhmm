@@ -216,67 +216,38 @@ void exon_intron_parser(Lambda *l, char *filename, int digit)
 
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit)
 {
-    assert(digit == 0 || digit == 1);                   // 0 for exon, 1 for intron
+    // zero everything
+    memset(ed->exon,   0, sizeof(ed->exon));
+    memset(ed->intron, 0, sizeof(ed->intron));
+    ed->min_len_exon   = ed->min_len_intron   = -1;
+    ed->max_len_exon   = ed->max_len_intron   = 0;
 
-    if      ( digit == 0 && DEBUG == 1)  printf("Starting getting exon explicit duration probability");
-    else if ( digit == 1 && DEBUG == 1)  printf("Starting getting intron explicit duration probability");
-    FILE *file = fopen(filename, "r");
-
-    if (file == NULL)
-    {
-        if (DEBUG == 1)     printf("Error opening explicit duration file: %s\n", filename);
-        perror("Error details");
-        return;
-    }
+    FILE *file = fopen(filename, "r");  
+    if (!file) { perror("…"); return; }
 
     char line[256];
-    char *token;
-    double p;
-    
-    if (digit == 0) 
+    int duration = 0;
+    while (fgets(line, sizeof(line), file))
     {
-        memset(ed->exon, 0, 1000 * sizeof(double));
-        ed->min_len_exon = 0;
-        ed->max_len_exon = 0;
-    } else 
-    {
-        memset(ed->intron, 0, 1000 * sizeof(double));
-        ed->min_len_intron = 0;
-        ed->max_len_intron = 0;
-    }
-
-    int c_line = 0;
-
-    while (fgets(line, sizeof(line), file) != NULL)
-    {
-        if (line[0] == '%')     continue;
-
-        c_line++;
-        token = strtok(line, " \t\r\n");
-        if (token == NULL) continue;
-        p = atof(token);
+        if(line[0] == '%')  continue;
         
-        if (digit == 0) 
-        {
-            ed->exon[c_line] = p;
-            if (p > 0 && ed->min_len_exon == 0)     ed->min_len_exon = c_line - 1;
-        } else 
-        {
-            ed->intron[c_line] = p;
-            if (p > 0 && ed->min_len_intron == 0)   ed->min_len_intron = c_line - 1;
-        }
-    }
+        char *tok = strtok(line, " \t\r\n");
+        if(!tok)    continue;
 
+        double prob = atof(tok);
+        double *arr = (digit == 0) ? ed->exon : ed->intron;
+
+        if (prob > 0.0 && (digit == 0 ? ed->min_len_exon : ed->min_len_intron) < 0)
+        {
+            if  (digit == 0) ed->min_len_exon   = duration;
+            else             ed->min_len_intron = duration;    
+        }
+
+        arr[duration] = prob;
+        duration++;
+    }   
     fclose(file);
-    if (digit == 0) 
-    {
-        ed->max_len_exon = c_line;
-        if (DEBUG == 1)     printf("\tExon duration: min=%d, max=%d\n\n", ed->min_len_exon, ed->max_len_exon);
-    } 
-    else 
-    {
-        ed->max_len_intron = c_line;
-        if (DEBUG == 1)     printf("\tIntron duration: min=%d, max=%d\n\n", ed->min_len_intron, ed->max_len_intron);
-    }
-    if (DEBUG == 1)     printf("\t\u2713\n");
+
+    if  (digit==0) ed->max_len_exon   = duration;
+    else           ed->max_len_intron = duration;
 }
