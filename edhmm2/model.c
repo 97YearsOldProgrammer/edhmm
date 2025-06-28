@@ -144,17 +144,6 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
 {
     if (DEBUG == 1)     printf("Start forward algorithm basis calculation:");
 
-    int     tau;                    // [tau]        :   residential time        aka: possible explicit duration
-    int     tau_exon;
-    int     tau_intron;
-    int     idx_em_prob;
-    int     idx_tran_prob;
-
-    double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
-    double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
-    double  ed_prob;                // [ed_prob]    :   pm(d)                   aka: explicit duration probability
-    double  alpha_sum = 1.0;
-
     /*
         given initial formula
             a(0)(m, d) = pi(m) * bm(d) * pm(d)
@@ -165,6 +154,15 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     in our case         = ∏(0 -> min_len_exon)bm(d) * pm(d+min_len_exon)
     aka:          total = pi * ed_prob
     */
+
+    int     tau;                    // [tau]        :   residential time        aka: possible explicit duration
+    int     idx_em_prob;
+    int     idx_tran_prob;
+
+    double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
+    double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
+    double  ed_prob;                // [ed_prob]    :   pm(d)                   aka: explicit duration probability
+    double  alpha_sum = 1.0;
     
     // find first donor site
     int donor;
@@ -181,55 +179,33 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     alpha->lbound = donor;
 
     // boundary check
-    tau = info->T-FLANK-ed->min_len_exon-FLANK;
+    tau = info->T-FLANK-ed->min_len_exon - donor+1;
+    if   (tau > ed->max_len_exon)   tau = ed->max_len_exon;
 
-    if   (tau > ed->max_len_exon)   tau_exon = ed->max_len_exon;
-    else                            tau_exon = tau;
-
-    for( int i = 0 ; i < tau_exon ; i++ )
+    // get emission prob before first donor site
+    alpha->basis[0][0] = 1.0;
+    for( int bps = FLANK ; bps < donor+1 ; bps++ )
     {
-        alpha->basis[0][i] = 1.0;
-    }
-    
-    int num_iter = 0;
-
-    for( int bps = FLANK ; bps < donor ; bps++)
-    {
-        num_iter++;
         idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
         em_prob     = l->B.exon[idx_em_prob];
- 
-        for( int i = 0 ; i < tau_exon ; i++ )
+        alpha_sum   = exp( log(alpha_sum)+log(em_prob) );
+
+        if (bps == donor-1 || bps == donor)
         {
-            alpha->basis[0][i] = exp( log(alpha->basis[0][i])+log(em_prob) );
+            int duration = bps-FLANK;
+            alpha->a[bps][0] = exp( log(alpha_sum)+log(duration) );
         }
-        alpha->basis[0][tau_exon-1] = 0.0;
-        tau_exon--; 
+
+        if (bps == donor)
+        {   
+            int duration = bps-FLANK;
+            alpha->basis[0][0] = alpha_sum;
+            for( int i = duration ; i < tau - duration ; i++ )
+            {
+                alpha->basis[0][i-duration] = exp( log(alpha_sum)+log(i));
+            }
+        }
     }
-
-    // plug in the explicit duration probability
-    for( int i = 0 ; i < tau_exon+1 ; i ++ )
-    {
-        ed_prob = ed->exon[num_iter-1];
-        if  ( ed_prob == 0.0 )  alpha->basis[0][i] = 0.0;
-        else                    alpha->basis[0][i] = exp( log(ed_prob)+log(alpha->basis[0][i]) );
-    }
-
-    alpha->a[donor-1][0] = alpha->basis[0][0];
-
-    idx_em_prob = base4_to_int(info->numerical_sequence, donor-3, 4);
-    em_prob     = l->B.exon[idx_em_prob];
-
-    double next_node;
-    double curr_node;
-    for( int i = 0 ; i < tau_exon ; i ++ )
-    {
-        curr_node = alpha->basis[0][i];
-        next_node = alpha->basis[0][i+1];
-        curr_node = exp( log(next_node)+log(em_prob) );
-    }
-    alpha->basis[0][tau_exon] = 0.0;
-    alpha->a[donor][0] = alpha->basis[0][0];
 
     /*
         for intron basis
@@ -237,20 +213,21 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
             a(0)(intron, d) = α(-1)(exon, 0) * a(exon|intron) * bintron(o0) * pintron(d)
     aka               total = pi * tprob * emprob * edprob
     */
-    tau = info->T-FLANK-ed->min_len_exon-donor;
-    if      (tau > ed->max_len_intron)   tau_intron = ed->max_len_intron;
-    else                                 tau_intron = tau;
+    tau = info->T-FLANK-ed->min_len_exon - donor+1;
+    if  (tau > ed->max_len_intron)  tau = ed->max_len_intron;
 
     em_prob         = l->B.intron[idx_em_prob];
     idx_tran_prob   = base4_to_int(info->numerical_sequence, donor, 5);
     tran_prob       = l->A.dons[idx_tran_prob];
-    alpha_sum       = exp( log(tran_prob)+log(alpha->a[donor-1-1][0])+log(em_prob) );
 
-    for( int d = 0 ; d < tau_intron ; d++ )
+    if (tran_prob == 0.0)   alpha_sum = 0.0;
+    else                    alpha_sum = exp( log(tran_prob)+log(alpha->a[donor-1][0])+log(em_prob) );
+
+    for( int d = 0 ; d < tau ; d++ )
     {
         ed_prob = ed->intron[d];
 
-        if  ( ed_prob == 0.0 )  alpha->basis[1][d] = 0.0;
+        if  (ed_prob == 0.0)    alpha->basis[1][d] = 0.0;
         else                    alpha->basis[1][d] = exp( log(alpha_sum)+log(ed_prob) );
     }
 
@@ -536,6 +513,7 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
         bw = beta->b[bps+1][1];
         xi = exp(log(fw)+log(bw));
         pos->xi[bps][1] = xi;
+        printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
     }
 }
 
@@ -543,7 +521,7 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
  * ================ Memory and Cleanup ================ *
  * ==================================================== */
 
- void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed)                            
+void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed)                            
 {
     if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
 

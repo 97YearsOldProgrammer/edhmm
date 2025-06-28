@@ -109,6 +109,5 @@ int main(int argc, char *argv[])
     free(info.original_sequence);
     free(info.numerical_sequence);
 
-
     return 0;
 }

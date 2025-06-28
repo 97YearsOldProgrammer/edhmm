@@ -216,17 +216,12 @@ void exon_intron_parser(Lambda *l, char *filename, int digit)
 
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit)
 {
-    // zero everything
-    memset(ed->exon,   0, sizeof(ed->exon));
-    memset(ed->intron, 0, sizeof(ed->intron));
-    ed->min_len_exon   = ed->min_len_intron   = -1;
-    ed->max_len_exon   = ed->max_len_intron   = 0;
-
     FILE *file = fopen(filename, "r");  
     if (!file) { perror("…"); return; }
 
     char line[256];
     int duration = 0;
+    
     while (fgets(line, sizeof(line), file))
     {
         if(line[0] == '%')  continue;
@@ -237,17 +232,18 @@ void explicit_duration_probability(Explicit_duration *ed, char *filename, int di
         double prob = atof(tok);
         double *arr = (digit == 0) ? ed->exon : ed->intron;
 
-        if (prob > 0.0 && (digit == 0 ? ed->min_len_exon : ed->min_len_intron) < 0)
-        {
-            if  (digit == 0) ed->min_len_exon   = duration;
-            else             ed->min_len_intron = duration;    
+        if (prob > 0.0) {
+            if (digit == 0 && ed->min_len_exon   < 0)
+                ed->min_len_exon   = duration;
+            if (digit != 0 && ed->min_len_intron < 0)
+                ed->min_len_intron = duration;
         }
 
         arr[duration] = prob;
         duration++;
-    }   
-    fclose(file);
+    }
 
     if  (digit==0) ed->max_len_exon   = duration;
     else           ed->max_len_intron = duration;
+    fclose(file);
 }
