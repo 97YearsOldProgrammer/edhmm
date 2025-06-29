@@ -37,6 +37,6 @@ debug: edhmm2
 
 # with default seq input
 test: edhmm2
-	./edhmm2 seq 1 ../models/acc.pwm ../models/don.pwm ../models/exon.mm ../models/intron.mm ../models/exon.len ../models/intron.len
+	./edhmm2 seq 1 ../models/don.pwm ../models/acc.pwm ../models/exon.mm ../models/intron.mm ../models/exon.len ../models/intron.len
 	
 .PHONY: all clean debug

@@ -136,13 +136,29 @@ double log_sum_exp(double *array, int n)
     return max + log(sum);       
 }
 
+void tolerance_checker(double *array, int len, const double epsilon)
+{
+    if(!array){
+        printf("This is not a valid input\n");
+        return;
+    }
+
+    for( int i = 0 ; i < len ; i++ )
+    {
+        if( array[i] < epsilon )
+        {
+            array[i] = 0.0;
+        }
+    }
+}
+
 /* ==================================================== *
  * ================= Computation Area ================= *
  * ==================================================== */
 
 void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info)
 {
-    if (DEBUG == 1)     printf("Start forward algorithm basis calculation:");
+    if( DEBUG == 1 || DEBUG == 2 )  printf("Start forward algorithm basis calculation:");
 
     /*
         given initial formula
@@ -165,7 +181,7 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     double  alpha_sum = 1.0;
     
     // find first donor site
-    int donor;
+    int donor = -1;
     char *seq = info->original_sequence;
 
     for( int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++)
@@ -176,11 +192,22 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
            break;
        }
     }
+
+    if (donor == -1)
+    {
+        printf("ERROR: No donor site (GT) found in sequence!\n");
+        printf("Search range: %d to %d\n", FLANK+ed->min_len_exon, info->T-FLANK-ed->min_len_exon);
+        printf("\n");
+        return;
+    }
+
     alpha->lbound = donor;
 
     // boundary check
     tau = info->T-FLANK-ed->min_len_exon - donor+1;
     if   (tau > ed->max_len_exon)   tau = ed->max_len_exon;
+
+    if (DEBUG == 1) printf("Processing exon region from %d to %d (tau=%d)\n", FLANK, donor+1, tau); 
 
     // get emission prob before first donor site
     alpha->basis[0][0] = 1.0;
@@ -193,7 +220,8 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
         if (bps == donor-1 || bps == donor)
         {
             int duration = bps-FLANK;
-            alpha->a[bps][0] = exp( log(alpha_sum)+log(duration) );
+            ed_prob      = ed->exon[duration];
+            alpha->a[bps][0] = exp( log(alpha_sum)+log(ed_prob) );
         }
 
         if (bps == donor)
@@ -202,10 +230,13 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
             alpha->basis[0][0] = alpha_sum;
             for( int i = duration ; i < tau - duration ; i++ )
             {
-                alpha->basis[0][i-duration] = exp( log(alpha_sum)+log(i));
+                ed_prob = ed->exon[i];
+                alpha->basis[0][i-duration] = exp( log(alpha_sum)+log(ed_prob) );
             }
         }
     }
+    
+    if (DEBUG == 1) printf("Exon basis calculation complete. alpha_sum = %e\n", alpha_sum);
 
     /*
         for intron basis
@@ -219,19 +250,26 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     em_prob         = l->B.intron[idx_em_prob];
     idx_tran_prob   = base4_to_int(info->numerical_sequence, donor, 5);
     tran_prob       = l->A.dons[idx_tran_prob];
-
+    printf("%f", tran_prob);
     if (tran_prob == 0.0)   alpha_sum = 0.0;
     else                    alpha_sum = exp( log(tran_prob)+log(alpha->a[donor-1][0])+log(em_prob) );
 
     for( int d = 0 ; d < tau ; d++ )
     {
         ed_prob = ed->intron[d];
+        printf("%.100e", ed_prob);
 
         if  (ed_prob == 0.0)    alpha->basis[1][d] = 0.0;
         else                    alpha->basis[1][d] = exp( log(alpha_sum)+log(ed_prob) );
     }
 
     alpha->a[donor][1] = alpha->basis[1][0]; 
+
+    printf("=== Alpha Basis[0] Debug ===\n");
+    for(int i = 0; i < ed->max_len_exon; i++) {
+        printf("alpha->basis[1][%d] = %.6e\n", i, alpha->basis[0][i]);
+    }
+    printf("========================\n");
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
@@ -508,12 +546,13 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
         bw = beta->b[bps-1][0];
         xi = exp( log(fw)+log(bw) );
         pos->xi[bps][0] = xi;
+        if(DEBUG == 1) printf("bps=%d, Donor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
 
         fw = alpha->a[bps+1][1];
         bw = beta->b[bps+1][1];
         xi = exp(log(fw)+log(bw));
         pos->xi[bps][1] = xi;
-        printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
+        if(DEBUG == 1) printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
     }
 }
 

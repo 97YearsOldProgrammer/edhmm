@@ -4,17 +4,19 @@
 #include <assert.h>
 #include "model.h"
 
-// read the sequence from file
+/* ==================================================== *
+ * ==================== Seq reader ==================== *
+ * ==================================================== */
 
 void read_sequence_file(const char *filename, Observed_events *info)
 {
-    if (DEBUG == 1)     printf("Start reading the sequence data:\n");
+    if (DEBUG == 1 || DEBUG == 2)   printf("Start reading the sequence data:\n");
 
     FILE *file = fopen(filename, "r");
     
     if (file == NULL)
     {
-        if (DEBUG == 1)     printf("Error: Cannot open sequence file %s\n", filename);
+        if (DEBUG == 1 || DEBUG == 2)   printf("Error: Cannot open sequence file %s\n", filename);
         return;
     }
     
@@ -56,16 +58,18 @@ void read_sequence_file(const char *filename, Observed_events *info)
     free(buffer);
     fclose(file);
 
-    if (DEBUG == 1)     printf("\tWe get original sequence with Seq len: %zu\n", seq_index);
-    if (DEBUG == 1)     printf("\tFinished\n");
-    if (DEBUG == 1)     printf("\n");
+    if (DEBUG == 1 || DEBUG == 2)   printf("\tWe get original sequence with Seq len: %zu\n", seq_index);
+    if (DEBUG == 1 || DEBUG == 2)   printf("\tFinished\n");
+    if (DEBUG == 1 || DEBUG == 2)   printf("\n");
 }
 
-// emission probability //
+/* ==================================================== *
+ * ============== Transition Probability ============== *
+ * ==================================================== */
 
 void donor_parser(Lambda *l, char *filename)            // get emission probability for donor site
 {
-    if (DEBUG == 1)     printf("Start getting donor site emission Probability:");
+    if (DEBUG == 1 || DEBUG == 2)     printf("Start getting donor site emission Probability:");
     FILE *file = fopen(filename, "r");
 
     char line[256];
@@ -74,7 +78,7 @@ void donor_parser(Lambda *l, char *filename)            // get emission probabil
 
     if (file == NULL)
     {
-        if (DEBUG == 1)     printf("Can't find file for donor site emission probability!\n");
+        if (DEBUG == 1 || DEBUG == 2)     printf("Can't find file for donor site emission probability!\n");
         return;
     }
     
@@ -99,55 +103,56 @@ void donor_parser(Lambda *l, char *filename)            // get emission probabil
         }
     }
     fclose(file);
-    if (DEBUG == 1)     printf("\t\u2713\n");
+    if (DEBUG == 1 || DEBUG == 2)     printf("\t\u2713\n");
 }
 
-void acceptor_parser(Lambda *l, char *filename)         // get emission probability for acceptor site
+void acceptor_parser(Lambda *l, char *filename) 
 {
-    if (DEBUG == 1)     printf("Start getting acceptor site emission Probability:");
-
+    if (DEBUG == 1 || DEBUG == 2)     printf("Start getting acceptor site emission Probability:");
     FILE *file = fopen(filename, "r");
-
-    char line[256];
-    char *token;
-    double p;                                           // probability we are gonna store
-
-    if (file == NULL)
-    { 
-        if (DEBUG == 1)     printf("Can't find file for donor site emission probability!\n");
+    if (file == NULL) {
+        printf("ERROR: Cannot open file!\n");
         return;
     }
     
-    int c_line = -1;                                    // count of line
-
-    while( fgets( line, sizeof(line) , file) != NULL )  // nest while loop to get elements
-    {
-        if ( line[0] == '%')     continue;              // skip the first line   
-
-        c_line++;
-        int c_token = -1;
-
-        token = strtok(line, " \t\n");                  // get each probability
-
-        while ( token != NULL )                         
+    char line[256];
+    int row = 0;
+    
+    while(fgets(line, sizeof(line), file) != NULL)
+    {        
+        if (line[0] == '%') continue;
+                
+        char temp[256];
+        strcpy(temp, line);
+        
+        char *token = strtok(temp, " \t\n\r");
+        int col = 0;
+        
+        while(token != NULL && col < 4)
         {
-            c_token ++;
-            p = atof(token);                            // convert string into double
-            l->B.accs[c_line][c_token] = p;             // store the value
-            token = strtok(NULL, " \t\n");              // move to next element
-        }
+            double val = atof(token);
+            l->B.accs[row][col] = val;            
+            col++;
+            token = strtok(NULL, " \t\n\r");
+        }                
+        row++;
     }
+    
     fclose(file);
-
-    if (DEBUG == 1)     printf("\t\u2713\n");
+    if (DEBUG == 1 || DEBUG == 2)     printf("\t\u2713\n");
 }
+
+/* ==================================================== *
+ * =============== Emission Probability =============== *
+ * ==================================================== */
+
 
 void exon_intron_parser(Lambda *l, char *filename, int digit)
 {
     assert(digit == 0 || digit == 1);                   // 0 for exon, 1 for intron
 
-    if      ( digit == 0 && DEBUG == 1 )    printf("Start getting exon   emission  Probability:");
-    else if ( digit == 1 && DEBUG == 1 )    printf("Start getting intron emission  Probability:");
+    if      ( digit == 0 && (DEBUG == 1 || DEBUG == 2) )    printf("Start getting exon   emission  Probability:");
+    else if ( digit == 1 && (DEBUG == 1 || DEBUG == 2) )    printf("Start getting intron emission  Probability:");
 
     FILE *file = fopen(filename, "r");
 
@@ -157,7 +162,7 @@ void exon_intron_parser(Lambda *l, char *filename, int digit)
 
     if (file == NULL)
     {
-        if (DEBUG == 1)     printf("Error: Cannot open file %s\n", filename);
+        if (DEBUG == 1 || DEBUG == 2)     printf("Error: Cannot open file %s\n", filename);
         return;
     }
     
@@ -176,7 +181,7 @@ void exon_intron_parser(Lambda *l, char *filename, int digit)
     }
     else 
     {
-        if (DEBUG == 1)     printf("Warning: No header found in %s\n", filename);
+        if (DEBUG == 1 || DEBUG == 2)     printf("Warning: No header found in %s\n", filename);
         rewind(file); 
     }
 
@@ -209,41 +214,86 @@ void exon_intron_parser(Lambda *l, char *filename, int digit)
     }
     
     fclose(file);
-    if (DEBUG == 1)     printf("\t\u2713\n");
+    if (DEBUG == 1 || DEBUG == 2)     printf("\t\u2713\n");
 }
 
-// eplicit_duration //
+/* ==================================================== *
+ * ============== Explicit Duration Prob ============== *
+ * ==================================================== */
 
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit)
 {
+    if (digit == 0)
+    {
+        ed->min_len_exon = -1;
+        ed->max_len_exon = 0;
+    } else
+    {
+        ed->min_len_intron = -1;
+        ed->max_len_intron = 0;
+    }
+
     FILE *file = fopen(filename, "r");  
-    if (!file) { perror("…"); return; }
+    if (!file) { 
+        printf("Error: Cannot open file %s\n", filename);
+        perror("File open error");
+        return; 
+    }
 
     char line[256];
     int duration = 0;
     
+    if (DEBUG == 1 || DEBUG == 2) printf("Start parsing explicit duration file: %s (digit=%d)\n", filename, digit);
+    
     while (fgets(line, sizeof(line), file))
     {
-        if(line[0] == '%')  continue;
+        // Skip header
+        if(line[0] == '%')
+        {
+            if (DEBUG == 1 || DEBUG == 2)   printf("Skipping header: %s", line);
+            continue;
+        }
         
+        // Parse the probability value
         char *tok = strtok(line, " \t\r\n");
-        if(!tok)    continue;
+        if(!tok) continue;
 
         double prob = atof(tok);
         double *arr = (digit == 0) ? ed->exon : ed->intron;
 
-        if (prob > 0.0) {
-            if (digit == 0 && ed->min_len_exon   < 0)
-                ed->min_len_exon   = duration;
-            if (digit != 0 && ed->min_len_intron < 0)
+        // Store the probability
+        arr[duration] = prob;
+        
+        // Set minimum length when we encounter first non-zero probability
+        if (prob > 0.0)
+        {
+            if (digit == 0 && ed->min_len_exon == -1)
+            {
+                ed->min_len_exon = duration;
+                if (DEBUG == 1 || DEBUG == 2)   printf("Setting min_len_exon = %d\n", duration);
+            }
+            if (digit == 1 && ed->min_len_intron == -1)
+            {
                 ed->min_len_intron = duration;
+                if (DEBUG == 1 || DEBUG == 2)   printf("Setting min_len_intron = %d\n", duration);
+            }
         }
 
-        arr[duration] = prob;
         duration++;
     }
 
-    if  (digit==0) ed->max_len_exon   = duration;
-    else           ed->max_len_intron = duration;
+    // Set maximum length
+    if (digit == 0)
+    {
+        ed->max_len_exon = duration;
+        if (DEBUG == 1 || DEBUG == 2)   printf("Set max_len_exon = %d\n", duration);
+    } else
+    {
+        ed->max_len_intron = duration;
+        if (DEBUG == 1 || DEBUG == 2)   printf("Set max_len_intron = %d\n", duration);
+    }
+    
     fclose(file);
+    
+    if (DEBUG == 1 || DEBUG == 2)   printf("Finished parsing duration file. ");
 }

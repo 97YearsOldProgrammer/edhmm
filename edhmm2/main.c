@@ -1,5 +1,6 @@
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 #include "model.h"
 
 int main(int argc, char *argv[])
@@ -28,8 +29,8 @@ int main(int argc, char *argv[])
         printf("Usage: %s <sequence_file> <hmm_model_output> [don_emission] [acc_emission] [exon_emission] [intron_emission] [Ped_exon] [Ped_intron]\n", argv[0]);
         printf("If only sequence_file is provided, default paths will be used for other files.\n");
         printf("hmm_model_output:\n");
-        printf("\t0 for hints providing donor and acceptor sites posterior probability");
-        printf("\t1 for vit stochatisc random forest with final prob as exon and intron");
+        printf("\t0 for hints providing donor and acceptor sites posterior probability\n");
+        printf("\t1 for vit stochatisc random forest with final prob as exon and intron\n");
         return 1;
     }
 
@@ -47,7 +48,7 @@ int main(int argc, char *argv[])
     Ped_exon        = (argc > 7) ? argv[7] : default_Ped_exon;
     Ped_intron      = (argc > 8) ? argv[8] : default_Ped_intron;
 
-    // data structure 
+    // Initialize data structures
     Observed_events info;
     Apc apc;
     Lambda l;
@@ -56,26 +57,57 @@ int main(int argc, char *argv[])
     Backward_algorithm bw;
     Pos_prob pos;
 
+    // Initialize Explicit_duration structure properly
+    memset(&ed, 0, sizeof(Explicit_duration));
+    ed.min_len_exon = -1;
+    ed.min_len_intron = -1;
+    ed.max_len_exon = 0;
+    ed.max_len_intron = 0;
+
+    // Initialize Lambda structure
+    memset(&l, 0, sizeof(Lambda));
+
+    if (DEBUG == 1 || DEBUG == 2) printf("=== Starting EDHMM Analysis ===\n");
+
     // Load input sequence
+    if (DEBUG == 1 || DEBUG == 2) printf("Loading sequence from: %s\n", seq_input);
     read_sequence_file(seq_input, &info);
     numerical_transcription(&info, info.original_sequence);
 
     // Load model files
+    if (DEBUG == 1 || DEBUG == 2) printf("Loading model files...\n");
     donor_parser(&l, don_emission);
     acceptor_parser(&l, acc_emission);
     exon_intron_parser(&l, exon_emission, 0);
     exon_intron_parser(&l, intron_emission, 1);
+    
+    // Load explicit duration probabilities
     explicit_duration_probability(&ed, Ped_exon,   0);
     explicit_duration_probability(&ed, Ped_intron, 1);
 
-    // Transition matrix
-    if (DEBUG == 1) printf("Start calculating transition probability for donor sites:\n");
-    initialize_donor_transition_matrix(&l, &apc, 0);
-    if (DEBUG == 1) printf("\tFinished\n");
+    if (DEBUG == 1 || DEBUG == 2)
+    {
+        printf("Explicit duration parameters loaded:\n");
+        printf("  Exon: min=%d, max=%d\n", ed.min_len_exon, ed.max_len_exon);
+        printf("  Intron: min=%d, max=%d\n", ed.min_len_intron, ed.max_len_intron);
+        printf("  Sequence length: %d\n", info.T);
+        printf("  Analysis range: %d to %d\n", FLANK+ed.min_len_exon, info.T-FLANK-ed.min_len_exon);
+    }
 
-    if (DEBUG == 1) printf("Start calculating transition probability for acceptor sites:\n");
+    // Transition matrix
+    if (DEBUG == 1 || DEBUG == 2) printf("Start calculating transition probability for donor sites:\n");
+    initialize_donor_transition_matrix(&l, &apc, 0);
+    if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");
+
+    if (DEBUG == 1 || DEBUG == 2) printf("Start calculating transition probability for acceptor sites:\n");
     initialize_acceptor_transition_matrix(&l, &apc, 0);
-    if (DEBUG == 1) printf("\tFinished\n");
+    if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");
+
+    if (DEBUG == 1) 
+    {
+        print_transition_matrices_summary(&l);
+        print_duration_summary(&ed);
+    }
 
     // Allocate memory
     allocate_fw(&info, &fw, &ed);
@@ -92,10 +124,9 @@ int main(int argc, char *argv[])
     pos_prob(&bw, &fw, &info, &ed, &pos);
 
     // Output
-    if (hmm_output == 0)
-        print_splice_sites(&pos, &info, &ed);
-
-    if (hmm_output == 1) {
+    if      (hmm_output == 0)    print_splice_sites(&pos, &info, &ed);
+    else if (hmm_output == 1)
+    {
         print_splice_sites(&pos, &info, &ed);
         printf("=== Debug Forward Basis ===\n");
         printf("fw.basis[0][0] (exon)  = %.10f\n", fw.basis[0][0]);
@@ -108,6 +139,8 @@ int main(int argc, char *argv[])
     free_pos(&pos, &info);
     free(info.original_sequence);
     free(info.numerical_sequence);
+
+    if (DEBUG == 1) printf("=== EDHMM Analysis Complete ===\n");
 
     return 0;
 }

@@ -3,7 +3,7 @@
 
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
 #define FLANK 99                        // define the global flank size
-#define DEBUG 0                         // if this is 1, it would print out everything
+#define DEBUG 1                         // if this is 1, it would print out everything
 
 typedef struct                          // observed events with length T
 {
@@ -109,6 +109,9 @@ void free_pos(Pos_prob *pos, Observed_events *info);
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Pos_prob *pos);
 
 /* ===== Output ===== */
+void index_to_sequence(int index, int length, char *seq);
+void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
+void print_duration_summary(Explicit_duration *ed);
 
 #endif
