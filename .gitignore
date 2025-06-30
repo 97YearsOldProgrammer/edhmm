@@ -22,3 +22,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyc
+
+# Ignore test output file
+output

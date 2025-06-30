@@ -109,6 +109,20 @@ int main(int argc, char *argv[])
         print_duration_summary(&ed);
     }
 
+    // set almost zero value to zero for easier computation
+    tolerance_checker(ed.exon,   1000,  1e-15);
+    tolerance_checker(ed.intron, 1000,  1e-15);
+    tolerance_checker(l.A.dons, 1024,   1e-15);
+    tolerance_checker(l.A.accs, 4096,   1e-15);
+
+    // sending everything into log space
+    log_space_converter(ed.exon, 1000);
+    log_space_converter(ed.intron, 1000);
+    log_space_converter(l.A.dons, 1024);
+    log_space_converter(l.A.accs, 4096);
+    log_space_converter(l.B.exon, 256);
+    log_space_converter(l.B.intron, 256);
+
     // Allocate memory
     allocate_fw(&info, &fw, &ed);
     allocate_bw(&bw, &ed, &info);

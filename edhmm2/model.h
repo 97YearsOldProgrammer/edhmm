@@ -3,7 +3,7 @@
 
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
 #define FLANK 99                        // define the global flank size
-#define DEBUG 1                         // if this is 1, it would print out everything
+#define DEBUG 2                         // if this is 1, it would print out everything
 
 typedef struct                          // observed events with length T
 {
@@ -86,6 +86,8 @@ int    power(int base, int exp);
 int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
+void   tolerance_checker(double *array, int len, const double epsilon);
+void   log_space_converter(double *array, int len);
 
 /* ===== Transition matrix initialization ===== */
 void initialize_donor_transition_matrix(Lambda *l, Apc *a, int depth);
@@ -94,6 +96,11 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 /* ===== Forward algorithm ===== */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
 void basis_fw_algo(Lambda *l, Explicit_duration *ed, Forward_algorithm *alpha, Observed_events *info);
+void debug_fw_values(int bps, int hs, int i,
+    double cont_node, double tran_node,
+    double em_prob, double tran_prob, double ed_prob,
+    double cont_sum, double tran_sum, double result,
+    int idx_em_prob, int idx_tran_prob);
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha);
 

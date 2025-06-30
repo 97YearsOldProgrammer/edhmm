@@ -118,37 +118,51 @@ int base4_to_int(int *array, int beg, int length)
 
 double log_sum_exp(double *array, int n) 
 {
-    if(n <= 0)  return 0.0;
+    if(!array){
+        printf("Something wrong with log_sum_exp trick. Invalid Input\n");
+        return 0.0;
+    }
+
+    if(n <= 0) return 0.0;
 
     double max = array[0];
     double sum = 0.0;
 
-    for( int i = 1 ; i < n ; i++ )
-    {
+    // find max
+    for( int i = 1 ; i < n ; i++ ){
         if( array[i] > max )     max = array[i];                  
     }
 
-    for( int i = 0 ; i < n ; i++ )
-    {
+    // computation
+    for( int i = 0 ; i < n ; i++ ){
         sum += exp(array[i] - max);
     }
 
     return max + log(sum);       
 }
 
-void tolerance_checker(double *array, int len, const double epsilon)
-{
+void tolerance_checker(double *array, int len, const double epsilon){
+
     if(!array){
-        printf("This is not a valid input\n");
+        printf("This is not a valid input for float20.0\n");
         return;
     }
 
-    for( int i = 0 ; i < len ; i++ )
-    {
-        if( array[i] < epsilon )
-        {
-            array[i] = 0.0;
-        }
+    for( int i = 0 ; i < len ; i++ ){
+        if( array[i] < epsilon )    array[i] = 0;
+    }
+}
+
+void log_space_converter(double *array, int len){
+
+    if(!array){
+        printf("This is not a valid input for log_space converter\n");
+        return;
+    }
+
+    for( int i = 0; i < len ; i++ ){
+        if( array[i] == 0.0 )   continue;
+        else                    array[i] = log(array[i]);
     }
 }
 
@@ -184,17 +198,14 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     int donor = -1;
     char *seq = info->original_sequence;
 
-    for( int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++)
-    {
-       if( seq[i] == 'G' && seq[i+1] == 'T' )
-       {
+    for( int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++){
+       if( seq[i] == 'G' && seq[i+1] == 'T' ){
            donor = i;
            break;
        }
     }
 
-    if (donor == -1)
-    {
+    if (donor == -1){
         printf("ERROR: No donor site (GT) found in sequence!\n");
         printf("Search range: %d to %d\n", FLANK+ed->min_len_exon, info->T-FLANK-ed->min_len_exon);
         printf("\n");
@@ -205,39 +216,39 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
 
     // boundary check
     tau = info->T-FLANK-ed->min_len_exon - donor+1;
-    if   (tau > ed->max_len_exon)   tau = ed->max_len_exon;
+    if (tau > ed->max_len_exon)   tau = ed->max_len_exon;
 
     if (DEBUG == 1) printf("Processing exon region from %d to %d (tau=%d)\n", FLANK, donor+1, tau); 
 
     // get emission prob before first donor site
-    alpha->basis[0][0] = 1.0;
-    for( int bps = FLANK ; bps < donor+1 ; bps++ )
-    {
+    alpha->basis[0][0] = 0.0;
+
+    for( int bps = FLANK ; bps < donor+1 ; bps++ ){
         idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
         em_prob     = l->B.exon[idx_em_prob];
-        alpha_sum   = exp( log(alpha_sum)+log(em_prob) );
+        alpha_sum   = alpha_sum+em_prob;
 
-        if (bps == donor-1 || bps == donor)
-        {
+        if (bps == donor-1 || bps == donor){
             int duration = bps-FLANK;
             ed_prob      = ed->exon[duration];
-            alpha->a[bps][0] = exp( log(alpha_sum)+log(ed_prob) );
+
+            if (ed_prob == 0.0) alpha->a[bps][0]    = 0.0;
+            else                alpha->a[bps][0]    = alpha_sum+ed_prob;
         }
 
-        if (bps == donor)
-        {   
+        if (bps == donor){   
             int duration = bps-FLANK;
             alpha->basis[0][0] = alpha_sum;
-            for( int i = duration ; i < tau - duration ; i++ )
-            {
+
+            for( int i = duration ; i < tau - duration ; i++ ){
                 ed_prob = ed->exon[i];
-                alpha->basis[0][i-duration] = exp( log(alpha_sum)+log(ed_prob) );
+                if (ed_prob == 0.0) alpha->basis[0][i-duration] = 0.0;
+                else                alpha->basis[0][i-duration] = alpha_sum+ed_prob;
             }
         }
     }
     
     if (DEBUG == 1) printf("Exon basis calculation complete. alpha_sum = %e\n", alpha_sum);
-
     /*
         for intron basis
         we need wait until the first donor site appear for continue calculation
@@ -250,132 +261,140 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     em_prob         = l->B.intron[idx_em_prob];
     idx_tran_prob   = base4_to_int(info->numerical_sequence, donor, 5);
     tran_prob       = l->A.dons[idx_tran_prob];
-    printf("%f", tran_prob);
+
+    if(DEBUG== 2) printf("%f", tran_prob);
+
     if (tran_prob == 0.0)   alpha_sum = 0.0;
-    else                    alpha_sum = exp( log(tran_prob)+log(alpha->a[donor-1][0])+log(em_prob) );
+    else                    alpha_sum = tran_prob+alpha->a[donor-1][0]+em_prob;
 
     for( int d = 0 ; d < tau ; d++ )
     {
         ed_prob = ed->intron[d];
-        printf("%.100e", ed_prob);
 
         if  (ed_prob == 0.0)    alpha->basis[1][d] = 0.0;
-        else                    alpha->basis[1][d] = exp( log(alpha_sum)+log(ed_prob) );
+        else                    alpha->basis[1][d] = alpha_sum+ed_prob;
     }
 
     alpha->a[donor][1] = alpha->basis[1][0]; 
 
-    printf("=== Alpha Basis[0] Debug ===\n");
-    for(int i = 0; i < ed->max_len_exon; i++) {
-        printf("alpha->basis[1][%d] = %.6e\n", i, alpha->basis[0][i]);
+    if (DEBUG == 2) {
+        printf("=== Basis for forward Algorithm Debug ===\n");
+        printf("Donor: %1e, %1e", alpha->a[donor-1][0], alpha->a[donor][0]);
+        printf("Acceptor:%1e, %1e", alpha->a[donor-1][1], alpha->a[donor][1]);
     }
-    printf("========================\n");
 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
+void debug_fw_values(int bps, int hs, int i,
+    double cont_node, double tran_node,
+    double em_prob, double tran_prob, double ed_prob,
+    double cont_sum, double tran_sum, double result,
+    int idx_em_prob, int idx_tran_prob)
+{
+static int call_count = 0;
+
+// Print first 10 calls only
+if (call_count < 10) {
+printf("\n=== DEBUG #%d: t=%d, hs=%d, i=%d ===\n", call_count, bps, hs, i);
+printf("Nodes: cont=%.3e, tran=%.3e\n", cont_node, tran_node);
+printf("Probs: em=%.3e (idx=%d), tran=%.3e (idx=%d), ed=%.3e\n",
+em_prob, idx_em_prob, tran_prob, idx_tran_prob, ed_prob);
+printf("Sums: cont=%.3e, tran=%.3e -> result=%.3e\n",
+cont_sum, tran_sum, result);
+printf("Zero checks: cont=%d, tran=%d, tp=%d, ed=%d\n",
+cont_node == 0.0, tran_node == 0.0, tran_prob == 0.0, ed_prob == 0.0);
+call_count++;
+}
+}
+
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed)
 {
-    if (DEBUG == 1)     printf("Start computation for forward algorithm:");
+    if (DEBUG == 1 || DEBUG == 2) printf("Start computation for forward algorithm:\n");
 
-    /* 
-    Forward recursion formula for duration-based HMM:
+    /*
+        Forward recursion formula for duration-based HMM:
 
-    α_t(m, d) =   α_(t-1)(m, d+1) * b_m(o_t)
-            + [sum over n ≠ m of α_(t-1)(n, 1) * a_nm] * b_m(o_t) * p_m(d)
+        α_t(m, d) =   α_(t-1)(m, d+1) * b_m(o_t)
+                + [sum over n ≠ m of α_(t-1)(n, 1) * a_nm] * b_m(o_t) * p_m(d)
 
-    Where:
-        - t     = current time step
-        - m     = current state
-        - d     = duration in current state
-        - α_t   = forward probability
-        - b_m   = emission probability for state m at time t
-        - a_nm  = transition probability from state n to m
-        - p_m(d)= duration probability of staying in state m for d steps
-
-    Logic:
-        1. If you're still in the same state (m), just extend duration: 
-               take α from previous time, same state, one longer duration.
-        2. Or you just transitioned into state m from another state n:
-               sum over all other states n, and get their α with duration 1,
-               multiply by transition probability from n to m,
-               then add emission and duration prob for new state m.
-    
-        -- written by ChatGpt, btw logic all been verified by Gong
+        Logic:
+            1. If you're still in the same state (m), just extend duration: 
+                   take α from previous time, same state, one longer duration.
+            2. Or you just transitioned into state m from another state n:
+                   sum over all other states n, and get their α with duration 1,
+                   multiply by transition probability from n to m,
+                   then add emission and duration prob for new state m.
+        
+            -- written by ChatGPT, logic verified by Gong
     */
 
-    int start     = alpha->lbound+1;
-    int end       = info->T-FLANK- ed->min_len_exon;
-    int tau       = start-end+1;
+    int start = alpha->lbound + 1;
+    int end   = info->T - FLANK - ed->min_len_exon;
+    int tau   = start - end + 1;
     int bound;
 
-    for( int bps = start ; bps < end ; bps ++ )
-    {   
+    for (int bps = start; bps < end; bps++) {
         tau--;
-        // hidden state
-        for( int hs = 0 ; hs < HS ; hs ++ ) 
-        {   
-            double tran_prob;       // [tran_prob]  : a(nm)                 aka: transition_prob
-            double ed_prob;         // [ed_prob]    : pm(d)                 aka: explicit duration prob
-            double em_prob;         // [em_prob]    : bm(ot)                aka: emission_prob
-            double tran_node;       // [tran_node]  : transition node
-            double cont_node;       // [cont_node]  : continue node which is a(t-1)(m, d+1)
 
-            int    idx_tran_prob;
-            int    idx_em_prob;
-            int    con_hs;          // [con_hs]     : conjudated hidden state
+        for (int hs = 0; hs < HS; hs++) {
+            double tran_prob;
+            double ed_prob;
+            double em_prob;
+            double tran_node;
+            double cont_node;
 
-            // boundary check
+            int idx_tran_prob;
+            int idx_em_prob;
+            int con_hs;
+
             bound = (hs == 0) ? ed->max_len_exon : ed->max_len_intron;
-            if      (tau >= bound)  tau = bound;
-            
+            if (tau >= bound)
+                tau = bound;
+
             con_hs = (hs == 0) ? 1 : 0;
 
-            for( int i = 0 ; i < tau ; i++ )
-            {   // access previous node
-                cont_node = (i != tau-1) ? alpha->basis[hs][i+1] : 0.0;
-                tran_node = alpha->a[bps-1][con_hs];
+            for (int i = 0; i < tau; i++) {
+                cont_node = (i != tau - 1) ? alpha->basis[hs][i + 1] : 0.0;
+                tran_node = alpha->a[bps - 1][con_hs];
 
-                // prepare computation
-                idx_em_prob     = base4_to_int(info->numerical_sequence, bps-3, 4);
-                em_prob         = (hs == 0) ? l->B.exon[idx_em_prob] : l->B.intron[idx_em_prob];
+                idx_em_prob = base4_to_int(info->numerical_sequence, bps - 3, 4);
+                em_prob = (hs == 0) ? l->B.exon[idx_em_prob] : l->B.intron[idx_em_prob];
 
-                if(hs == 0)
-                {   // acceptor site for intron|exon
-                    idx_tran_prob   = base4_to_int(info->numerical_sequence, bps-6, 6);
-                    tran_prob       = l->A.accs[idx_tran_prob];
+                if (hs == 0) {
+                    idx_tran_prob = base4_to_int(info->numerical_sequence, bps - 6, 6);
+                    tran_prob = l->A.accs[idx_tran_prob];
+                } else {
+                    idx_tran_prob = base4_to_int(info->numerical_sequence, bps, 5);
+                    tran_prob = l->A.dons[idx_tran_prob];
                 }
+
+                double cont_sum;
+                double tran_sum;
+
+                if (cont_node == 0.0)
+                    cont_sum = 0.0;
                 else
-                {   // donor site for exon|intron 
-                    idx_tran_prob   = base4_to_int(info->numerical_sequence, bps, 5);
-                    tran_prob       = l->A.dons[idx_tran_prob];
-                }
+                    cont_sum = cont_node + em_prob;
 
-                // update continuation
-                if  (cont_node == 0.0)  alpha->basis[hs][i] = 0.0;
-                else                    alpha->basis[hs][i] = exp( log(cont_node)+log(em_prob) );
-                
-                // get explicit duration probability
                 ed_prob = (hs == 0) ? ed->intron[i] : ed->exon[i];
 
-                // update transition
-                if      (tran_node == 0.0)  alpha->basis[hs][i] += 0.0;
-                else if (tran_prob == 0.0)  alpha->basis[hs][i] += 0.0;
-                else if (ed_prob   == 0.0)  alpha->basis[hs][i] += 0.0;
-                else{   // make stable numerical addition; use log_exp_sum trick
-                    double logs[2] = {  
-                        log(alpha->basis[hs][i]),                                   // part of continue 
-                        (log(tran_node)+log(tran_prob)+log(ed_prob)+log(em_prob))   // part of transition
-                    };
-                    alpha->basis[hs][i] = log_sum_exp(logs, 2);
+                if (tran_node == 0.0 || tran_prob == 0.0 || ed_prob == 0.0) {
+                    alpha->basis[hs][i] = cont_sum;
+                } else {
+                    tran_sum = tran_node + tran_prob + ed_prob + em_prob;
+                    double logs[2] = { cont_sum, tran_sum };
+                    double total = log_sum_exp(logs, 2);
+                    printf("%e-10", total);
+                    alpha->basis[hs][i] = total;
                 }
+                alpha->a[bps][hs] = alpha->basis[hs][0];
+                debug_fw_values(bps, hs, i, cont_node, tran_node, em_prob, tran_prob, ed_prob, cont_sum, 0.0, alpha->basis[hs][i], idx_em_prob, idx_tran_prob);
             }
-            // save header of basis for posterior prob
-            alpha->a[bps][hs] = alpha->basis[hs][0];
         }
     }
 
-    if (DEBUG == 1)     printf("\tFinished\n");
+    if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");
 }
 
 void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed)
