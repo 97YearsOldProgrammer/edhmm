@@ -96,11 +96,6 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 /* ===== Forward algorithm ===== */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
 void basis_fw_algo(Lambda *l, Explicit_duration *ed, Forward_algorithm *alpha, Observed_events *info);
-void debug_fw_values(int bps, int hs, int i,
-    double cont_node, double tran_node,
-    double em_prob, double tran_prob, double ed_prob,
-    double cont_sum, double tran_sum, double result,
-    int idx_em_prob, int idx_tran_prob);
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha);
 

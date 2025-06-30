@@ -286,32 +286,8 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void debug_fw_values(int bps, int hs, int i,
-    double cont_node, double tran_node,
-    double em_prob, double tran_prob, double ed_prob,
-    double cont_sum, double tran_sum, double result,
-    int idx_em_prob, int idx_tran_prob)
-{
-static int call_count = 0;
-
-// Print first 10 calls only
-if (call_count < 10) {
-printf("\n=== DEBUG #%d: t=%d, hs=%d, i=%d ===\n", call_count, bps, hs, i);
-printf("Nodes: cont=%.3e, tran=%.3e\n", cont_node, tran_node);
-printf("Probs: em=%.3e (idx=%d), tran=%.3e (idx=%d), ed=%.3e\n",
-em_prob, idx_em_prob, tran_prob, idx_tran_prob, ed_prob);
-printf("Sums: cont=%.3e, tran=%.3e -> result=%.3e\n",
-cont_sum, tran_sum, result);
-printf("Zero checks: cont=%d, tran=%d, tp=%d, ed=%d\n",
-cont_node == 0.0, tran_node == 0.0, tran_prob == 0.0, ed_prob == 0.0);
-call_count++;
-}
-}
-
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed)
 {
-    if (DEBUG == 1 || DEBUG == 2) printf("Start computation for forward algorithm:\n");
-
     /*
         Forward recursion formula for duration-based HMM:
 
@@ -325,13 +301,13 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                    sum over all other states n, and get their α with duration 1,
                    multiply by transition probability from n to m,
                    then add emission and duration prob for new state m.
-        
-            -- written by ChatGPT, logic verified by Gong
     */
+
+    if (DEBUG == 1 || DEBUG == 2) printf("Start computation for forward algorithm:\n");
 
     int start = alpha->lbound + 1;
     int end   = info->T - FLANK - ed->min_len_exon;
-    int tau   = start - end + 1;
+    int tau   = end-start+1;
     int bound;
 
     for (int bps = start; bps < end; bps++) {
@@ -349,33 +325,31 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
             int con_hs;
 
             bound = (hs == 0) ? ed->max_len_exon : ed->max_len_intron;
-            if (tau >= bound)
-                tau = bound;
+            if (tau >= bound)   tau = bound;
 
             con_hs = (hs == 0) ? 1 : 0;
 
+            idx_em_prob = base4_to_int(info->numerical_sequence, bps - 3, 4);
+            em_prob = (hs == 0) ? l->B.exon[idx_em_prob] : l->B.intron[idx_em_prob];
+
+            if (hs == 0) {
+                idx_tran_prob = base4_to_int(info->numerical_sequence, bps - 6, 6);
+                tran_prob = l->A.accs[idx_tran_prob];
+            } else {
+                idx_tran_prob = base4_to_int(info->numerical_sequence, bps, 5);
+                tran_prob = l->A.dons[idx_tran_prob];
+            }
+
+            tran_node = alpha->a[bps - 1][con_hs];
+
             for (int i = 0; i < tau; i++) {
                 cont_node = (i != tau - 1) ? alpha->basis[hs][i + 1] : 0.0;
-                tran_node = alpha->a[bps - 1][con_hs];
-
-                idx_em_prob = base4_to_int(info->numerical_sequence, bps - 3, 4);
-                em_prob = (hs == 0) ? l->B.exon[idx_em_prob] : l->B.intron[idx_em_prob];
-
-                if (hs == 0) {
-                    idx_tran_prob = base4_to_int(info->numerical_sequence, bps - 6, 6);
-                    tran_prob = l->A.accs[idx_tran_prob];
-                } else {
-                    idx_tran_prob = base4_to_int(info->numerical_sequence, bps, 5);
-                    tran_prob = l->A.dons[idx_tran_prob];
-                }
 
                 double cont_sum;
                 double tran_sum;
 
-                if (cont_node == 0.0)
-                    cont_sum = 0.0;
-                else
-                    cont_sum = cont_node + em_prob;
+                if (cont_node == 0.0)   cont_sum = 0.0;
+                else                    cont_sum = cont_node + em_prob;
 
                 ed_prob = (hs == 0) ? ed->intron[i] : ed->exon[i];
 
@@ -385,13 +359,21 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                     tran_sum = tran_node + tran_prob + ed_prob + em_prob;
                     double logs[2] = { cont_sum, tran_sum };
                     double total = log_sum_exp(logs, 2);
-                    printf("%e-10", total);
                     alpha->basis[hs][i] = total;
                 }
                 alpha->a[bps][hs] = alpha->basis[hs][0];
-                debug_fw_values(bps, hs, i, cont_node, tran_node, em_prob, tran_prob, ed_prob, cont_sum, 0.0, alpha->basis[hs][i], idx_em_prob, idx_tran_prob);
             }
         }
+        if( bps == 499) {
+            for( int i = 0 ; i < 100 ; i++) {
+                printf("%f\t",alpha->basis[0][i]);
+            }
+        }
+    }
+
+    for( int i = start ; i < end ; i++)
+    {
+        printf("At time %i. This is donor %f. Acceptor %f.\n", i, alpha->a[i][0], alpha->a[i][1]);
     }
 
     if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");

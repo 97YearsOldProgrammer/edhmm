@@ -25,3 +25,6 @@ __pycache__/
 
 # Ignore test output file
 output
+
+# Ignore personal test file
+test666.py
