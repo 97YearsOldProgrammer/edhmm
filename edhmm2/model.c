@@ -355,8 +355,11 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
 
                 if (tran_node == 0.0 || tran_prob == 0.0 || ed_prob == 0.0) {
                     alpha->basis[hs][i] = cont_sum;
+                } else if (cont_sum == 0.0) {
+                    tran_sum = tran_node+tran_prob+ed_prob+em_prob;
+                    alpha->basis[hs][i] = tran_sum;
                 } else {
-                    tran_sum = tran_node + tran_prob + ed_prob + em_prob;
+                    tran_sum = tran_node+tran_prob+ed_prob+em_prob;
                     double logs[2] = { cont_sum, tran_sum };
                     double total = log_sum_exp(logs, 2);
                     alpha->basis[hs][i] = total;
