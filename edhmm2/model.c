@@ -187,20 +187,20 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
     double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
     double  ed_prob;                // [ed_prob]    :   pm(d)                   aka: explicit duration probability
-    double  alpha_sum = 1.0;
+    double  alpha_sum = 0.0;
     
     // find first donor site
     int donor = -1;
     char *seq = info->original_sequence;
 
-    for( int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++){
-       if( seq[i] == 'G' && seq[i+1] == 'T' ){
+    for (int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++) {
+       if (seq[i] == 'G' && seq[i+1] == 'T') {
            donor = i;
            break;
        }
     }
 
-    if (donor == -1){
+    if (donor == -1) {
         printf("ERROR: No donor site (GT) found in sequence!\n");
         printf("Search range: %d to %d\n", FLANK+ed->min_len_exon, info->T-FLANK-ed->min_len_exon);
         printf("\n");
@@ -213,29 +213,29 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     tau = info->T-FLANK-ed->min_len_exon - donor+1;
     if (tau > ed->max_len_exon)   tau = ed->max_len_exon;
 
-    if (DEBUG == 1 || DEBUG == 2) printf("Processing exon region from %d to %d (tau=%d)\n", FLANK, donor+1, tau); 
+    if (DEBUG == 1 || DEBUG == 2) printf("Processing exon region from %d to %d (tau=%d)\n", FLANK, donor, tau); 
 
     // get emission prob before first donor site
     alpha->basis[0][0] = 0.0;
 
-    for( int bps = FLANK ; bps < donor+1 ; bps++ ){
+    int duration = -1;
+    for (int bps = FLANK ; bps < donor+1 ; bps++) {
+        duration++;
         idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
         em_prob     = l->B.exon[idx_em_prob];
         alpha_sum   = alpha_sum+em_prob;
 
-        if (bps == donor-1 || bps == donor){
-            int duration = bps-FLANK;
+        if (bps == donor-1 || bps == donor) {
             ed_prob      = ed->exon[duration];
 
             if (ed_prob == 0.0) alpha->a[bps][0]    = 0.0;
             else                alpha->a[bps][0]    = alpha_sum+ed_prob;
         }
 
-        if (bps == donor){   
-            int duration = bps-FLANK;
+        if (bps == donor) {   
             alpha->basis[0][0] = alpha_sum;
 
-            for( int i = duration ; i < tau - duration ; i++ ){
+            for (int i = duration ; i < tau - duration ; i++) {
                 ed_prob = ed->exon[i];
                 if (ed_prob == 0.0) alpha->basis[0][i-duration] = 0.0;
                 else                alpha->basis[0][i-duration] = alpha_sum+ed_prob;
@@ -514,37 +514,6 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
 
     if (DEBUG == 1)     printf("\tFinished.\n");
 }
-// Helper function to check canonical splice sites
-int check_splice_site(Observed_events *info, int bps, int site_type) {
-    /*
-     * site_type: 0 = donor (check for GT at bps+1, bps+2)
-     *           1 = acceptor (check for AG at bps-1, bps)
-     * Returns: 1 if canonical, 0 if not
-     */
-    
-    if (site_type == 0) { // Donor site - check for GT
-        // Make sure we don't go out of bounds
-        if (bps + 2 >= info->T) return 0;
-        
-        // Check if bps+1 is G and bps+2 is T
-        if (info->original_sequence[bps + 1] == 'G' && 
-            info->original_sequence[bps + 2] == 'T') {
-            return 1;
-        }
-    }
-    else if (site_type == 1) { // Acceptor site - check for AG
-        // Make sure we don't go out of bounds
-        if (bps - 1 < 0) return 0;
-        
-        // Check if bps-1 is A and bps is G
-        if (info->original_sequence[bps - 1] == 'A' && 
-            info->original_sequence[bps] == 'G') {
-            return 1;
-        }
-    }
-    
-    return 0; // Not canonical
-}
 
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos) {
     /*
@@ -562,30 +531,14 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
     
     for (int bps = FLANK ; bps < info->T-FLANK ; bps++) {
         // Process donor sites (state 0)
-        fw = alpha->a[bps-1][0];
+        fw = alpha->a[bps][0];
         bw = beta->b[bps][0];
         
         if (fw != 0.0 && bw != 0.0) {
             xi = fw+bw;
             pos->xi[bps][0] = xi;
             printf("%d ", bps);
-            
-            // Check if this donor site is canonical
-            if (!check_splice_site(info, bps, 0)) {
-                printf("BUG: Non-canonical donor site at position %d - ", bps);
-                printf("Expected GT at positions %d,%d but found %c%c\n", 
-                       bps+1, bps+2, 
-                       info->original_sequence[bps+1], 
-                       info->original_sequence[bps+2]);
-            } else {
-                // Debug: show what canonical sequence was found
-                printf("DONOR_OK:%d[%c%c] ", bps, 
-                       info->original_sequence[bps+1], 
-                       info->original_sequence[bps+2]);
-            }
-            //printf("bps=%d, Donor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
-        }
-        else {
+        } else {
             pos->xi[bps][0] = 0.0;
         }
         
@@ -597,23 +550,7 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
             xi = fw+bw;
             pos->xi[bps][1] = xi;
             printf("%d ", bps);
-            
-            // Check if this acceptor site is canonical
-            if (!check_splice_site(info, bps, 1)) {
-                printf("BUG: Non-canonical acceptor site at position %d - ", bps);
-                printf("Expected AG at positions %d,%d but found %c%c\n", 
-                       bps-1, bps, 
-                       info->original_sequence[bps-1], 
-                       info->original_sequence[bps]);
-            } else {
-                // Debug: show what canonical sequence was found
-                printf("ACCEPTOR_OK:%d[%c%c] ", bps, 
-                       info->original_sequence[bps-1], 
-                       info->original_sequence[bps]);
-            }
-            //printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
-        }
-        else {
+        } else {
             pos->xi[bps][1] = 0.0;
         }
     }

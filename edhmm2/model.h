@@ -108,7 +108,6 @@ void free_beta(Observed_events *info, Backward_algorithm *beta);
 /* ===== Posterior probabilities ===== */
 void allocate_pos(Pos_prob *pos, Observed_events *info);
 void free_pos(Pos_prob *pos, Observed_events *info);
-int check_splice_site(Observed_events *info, int bps, int site_type);
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos);
 
 /* ===== Output ===== */
