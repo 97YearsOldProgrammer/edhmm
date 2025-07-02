@@ -21,7 +21,6 @@ void numerical_transcription(Observed_events *info, const char *seq)
 
     for( size_t i = 0; i < len; i++)
     {
-        // A == 0 , C == 1, G == 2, T == 3  
         if      (seq[i] == 'A')     info->numerical_sequence[i] = 0;
         else if (seq[i] == 'C')     info->numerical_sequence[i] = 1;
         else if (seq[i] == 'G')     info->numerical_sequence[i] = 2;
@@ -33,14 +32,12 @@ void numerical_transcription(Observed_events *info, const char *seq)
     if (DEBUG == 1)     printf("\n");
 }
 
-double total_prob(double *array, int length)
-{
+double total_prob(double *array, int length) {
+
     double value = 0.0;
 
-    for (int i = 0 ; i < length ; i ++)
-    {
-        if (array[i] == 0.0)
-        {
+    for (int i = 0 ; i < length ; i ++) {
+        if (array[i] == 0.0) {
             value = 0.0;
             break;
         }
@@ -260,8 +257,6 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     idx_tran_prob   = base4_to_int(info->numerical_sequence, donor, 5);
     tran_prob       = l->A.dons[idx_tran_prob];
 
-    if(DEBUG== 2) printf("%f", tran_prob);
-
     if (tran_prob == 0.0)   alpha_sum = 0.0;
     else                    alpha_sum = tran_prob+alpha->a[donor-1][0]+em_prob;
 
@@ -409,6 +404,9 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
            break;
        }
     }
+
+    if (DEBUG == 1 || DEBUG == 2) printf("\nStart compute backward basis from %d to %d", accs, info->T-FLANK);
+
     beta->rbound = accs;
 
     // compute the bw exon until first accs site
@@ -519,14 +517,10 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
         }
     }
 
-    for (int i = start ; i > end ; i--) {
-        printf("At time %d. This is exon %f and it's intron %f.\n", i, beta->b[i][0], beta->b[i][1]);
-    }
-
     if (DEBUG == 1)     printf("\tFinished.\n");
 }
 
-void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Pos_prob *pos) {
+void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos) {
     /*
         update the posterior probability coupled inside bw algo
             ξ(t)(m, n) = α(t-1)(m, 1) * a(mn) * bn(ot) * Σ(n)bm(ot) * ed(prob)
@@ -538,19 +532,28 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
     double bw;      // [bw]    :   β(t)(m, 1)
     double xi;      // [xi]    :   greek letter for pos_prob
 
-    for (int bps = FLANK+ed->min_len_exon ; bps < info->T-FLANK-ed->min_len_exon-1 ; bps++) {
+    for (int bps = FLANK ; bps < info->T-FLANK ; bps++) {
 
         fw = alpha->a[bps-1][0];
-        bw = beta->b[bps-1][0];
-        xi = exp( log(fw)+log(bw) );
-        pos->xi[bps][0] = xi;
-        if(DEBUG == 1) printf("bps=%d, Donor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
+        bw = beta->b[bps][0];
 
-        fw = alpha->a[bps+1][1];
-        bw = beta->b[bps+1][1];
-        xi = exp(log(fw)+log(bw));
-        pos->xi[bps][1] = xi;
-        if(DEBUG == 1) printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
+        if (fw != 0.0 && bw != 0.0) {
+            xi = fw+bw;
+            pos->xi[bps][0] = xi;
+            //printf("bps=%d, Donor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
+
+        }
+        else    pos->xi[bps][0] = 0.0;
+
+        fw = alpha->a[bps-1][1];
+        bw = beta->b[bps][1];
+
+        if (fw != 0.0 && bw != 0.0) {
+            xi = fw+bw;
+            pos->xi[bps][1] = xi;
+            //printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
+        }
+        else    pos->xi[bps][1] = 0.0;
     }
 }
 
@@ -558,8 +561,8 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
  * ================ Memory and Cleanup ================ *
  * ==================================================== */
 
-void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed)                            
-{
+void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_duration *ed) {
+
     if (DEBUG == 1)     printf("Start allocate memory for the forward algorithm:");
 
     // alpha->a[t][i]
@@ -579,8 +582,8 @@ void allocate_fw(Observed_events *info, Forward_algorithm *alpha , Explicit_dura
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void free_alpha(Observed_events *info, Forward_algorithm *alpha)
-{
+void free_alpha(Observed_events *info, Forward_algorithm *alpha) {
+
     if (DEBUG == 1) printf("Clearing up forward algorithm memory:\n");
 
     int size_array = info->T;
@@ -595,8 +598,8 @@ void free_alpha(Observed_events *info, Forward_algorithm *alpha)
     if (DEBUG == 1) printf("\tFinished\n");
 }
 
-void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info)                             
-{
+void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info) {
+
     if (DEBUG == 1)     printf("Start allocate memory for the backward algorithm:");
                                     
     // allocate basis
@@ -613,8 +616,8 @@ void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_event
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void free_beta(Observed_events *info, Backward_algorithm *beta)
-{
+void free_beta(Observed_events *info, Backward_algorithm *beta) {
+
     if (DEBUG == 1) printf("Clearing up backward algorithm memory:\n");
 
     int size_array = info->T;
@@ -629,8 +632,8 @@ void free_beta(Observed_events *info, Backward_algorithm *beta)
     if (DEBUG == 1) printf("\tFinished\n");
 }
 
-void allocate_pos(Pos_prob *pos, Observed_events *info)
-{
+void allocate_pos(Pos_prob *pos, Observed_events *info){
+
     if (DEBUG == 1)     printf("Start Initialize Data Structure for Posterior Probability");
 
     int sarray = info->T;
@@ -641,8 +644,8 @@ void allocate_pos(Pos_prob *pos, Observed_events *info)
     if (DEBUG == 1)     printf("\tFinished\n");
 }
 
-void free_pos(Pos_prob *pos, Observed_events *info)
-{
+void free_pos(Pos_prob *pos, Observed_events *info) {
+
     if (DEBUG == 1)     printf("Clearing up Posterior Probabilities:\n");
 
     int T = info->T;

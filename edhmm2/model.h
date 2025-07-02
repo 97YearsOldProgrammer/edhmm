@@ -108,7 +108,7 @@ void free_beta(Observed_events *info, Backward_algorithm *beta);
 /* ===== Posterior probabilities ===== */
 void allocate_pos(Pos_prob *pos, Observed_events *info);
 void free_pos(Pos_prob *pos, Observed_events *info);
-void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed, Pos_prob *pos);
+void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos);
 
 /* ===== Output ===== */
 void index_to_sequence(int index, int length, char *seq);

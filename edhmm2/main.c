@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
     bw_algo(&l, &bw, &info, &ed);
 
     // Posterior probability
-    pos_prob(&bw, &fw, &info, &ed, &pos);
+    pos_prob(&bw, &fw, &info, &pos);
 
     // Output
     if      (hmm_output == 0)    print_splice_sites(&pos, &info, &ed);
