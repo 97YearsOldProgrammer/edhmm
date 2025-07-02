@@ -368,9 +368,6 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
 }
 
 void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed) {
-
-    if( DEBUG == 1 || DEBUG == 2 )  printf("Start Backward Algorithm basis calculation:\n");
-
     /*   
         for the most right bound
         given initial condition
@@ -385,6 +382,7 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
         boundary
             calculate until we reach first donor site
     */
+    if( DEBUG == 1 || DEBUG == 2 )  printf("Start Backward Algorithm basis calculation:\n");
 
     double em_prob;             // [em_prob]    : emission probability
     double ed_prob;             // [ed_prob]    : explicit duration probability
@@ -406,7 +404,6 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
     }
 
     if (DEBUG == 1 || DEBUG == 2) printf("\nStart compute backward basis from %d to %d", accs, info->T-FLANK);
-
     beta->rbound = accs;
 
     // compute the bw exon until first accs site
@@ -414,25 +411,21 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
         idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
         em_prob     = l->B.exon[idx_em_prob];
         bw_sum      = bw_sum+em_prob;
-
-        if (bps <= info->T-FLANK-ed->min_len_exon+1) {
-            beta->b[bps][1] = bw_sum;
-        }
     }
 
-    int exon_len = info->T - FLANK - accs;
-    beta->basis[0][exon_len] = bw_sum;
+    int exon_len = info->T-FLANK-accs;
+    beta->basis[0][exon_len+1] = bw_sum;
 
     // update the intron basis
     idx_tran_prob  = base4_to_int(info->numerical_sequence, accs-5, 6);
     tran_prob      = l->A.accs[idx_tran_prob];
-    ed_prob        = ed->exon[info->T-FLANK-accs-1];
+    ed_prob        = ed->exon[exon_len];
 
     if (tran_prob == 0.0)   bw_sum = 0.0;
     else                    bw_sum = bw_sum+ed_prob+tran_prob;
 
     // for intron | exon(min_exon_len) ; FLANK
-    beta->basis[1][0]   = bw_sum;
+    beta->basis[1][0] = bw_sum;
     beta->b[accs][1]  = bw_sum;
 
     if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");
@@ -446,13 +439,15 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
     int end   = FLANK+ed->min_len_exon-1;
     int tau;                    // [tau]    : the residual bound for hidden state
     
-    for (int bps = start ; bps > end ; bps--) {
+    if (DEBUG == 1 || DEBUG == 2)   printf("\n\tCompute from region %d to %d", start, end);
 
-        double bw_sum;          // [bw_sum]     : see note in first part                aka: backward sum
+    for (int bps = start ; bps > end ; bps--) {
+        
         double ed_prob;         // [ed_prob]    : pn(d)                                 aka: explicit duration probability
         double node;
         double tran_prob;       // [tran_prob]  : a(mn)                                 aka: transition probability
         double em_prob;         // [em_prob]    : bn(ot+1)                              aka: emission probability
+        double bw_sum;          // [bw_sum]     : see note in first part                aka: backward sum
 
         int    con_hs;          // [con_hs]     : conjugated hidden state
         int    idx_tran_prob;   
@@ -494,11 +489,11 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             if (tran_prob == 0.0 || bw_sum == 0.0)  bw_sum = 0.0;
             else                                    bw_sum = tran_prob+bw_sum+em_prob;
 
-            beta->b[bps][con_hs] = bw_sum;
+            beta->b[bps][hs] = bw_sum;
         }
 
         // don't continue computation when reach left bound
-        if  (bps == FLANK+ed->min_len_exon) break;
+        if  (bps == end+1) break;
 
         for (int hs = 0 ; hs < HS ; hs++) {
 
@@ -519,41 +514,108 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
 
     if (DEBUG == 1)     printf("\tFinished.\n");
 }
+// Helper function to check canonical splice sites
+int check_splice_site(Observed_events *info, int bps, int site_type) {
+    /*
+     * site_type: 0 = donor (check for GT at bps+1, bps+2)
+     *           1 = acceptor (check for AG at bps-1, bps)
+     * Returns: 1 if canonical, 0 if not
+     */
+    
+    if (site_type == 0) { // Donor site - check for GT
+        // Make sure we don't go out of bounds
+        if (bps + 2 >= info->T) return 0;
+        
+        // Check if bps+1 is G and bps+2 is T
+        if (info->original_sequence[bps + 1] == 'G' && 
+            info->original_sequence[bps + 2] == 'T') {
+            return 1;
+        }
+    }
+    else if (site_type == 1) { // Acceptor site - check for AG
+        // Make sure we don't go out of bounds
+        if (bps - 1 < 0) return 0;
+        
+        // Check if bps-1 is A and bps is G
+        if (info->original_sequence[bps - 1] == 'A' && 
+            info->original_sequence[bps] == 'G') {
+            return 1;
+        }
+    }
+    
+    return 0; // Not canonical
+}
 
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos) {
     /*
         update the posterior probability coupled inside bw algo
             ξ(t)(m, n) = α(t-1)(m, 1) * a(mn) * bn(ot) * Σ(n)bm(ot) * ed(prob)
-    aka     ξ(t)(m, n) = α(t-1)(m, 1) * β(t)(m, 1)
-    which is        xi = fw * bw
+        aka
+            ξ(t)(m, n) = α(t-1)(m, 1) * β(t)(m, 1)
+        which is
+            xi = fw * bw
     */
-
+    
     double fw;      // [fw]    :   α(t-1)(m, 1)
     double bw;      // [bw]    :   β(t)(m, 1)
     double xi;      // [xi]    :   greek letter for pos_prob
-
+    
     for (int bps = FLANK ; bps < info->T-FLANK ; bps++) {
-
+        // Process donor sites (state 0)
         fw = alpha->a[bps-1][0];
         bw = beta->b[bps][0];
-
+        
         if (fw != 0.0 && bw != 0.0) {
             xi = fw+bw;
             pos->xi[bps][0] = xi;
+            printf("%d ", bps);
+            
+            // Check if this donor site is canonical
+            if (!check_splice_site(info, bps, 0)) {
+                printf("BUG: Non-canonical donor site at position %d - ", bps);
+                printf("Expected GT at positions %d,%d but found %c%c\n", 
+                       bps+1, bps+2, 
+                       info->original_sequence[bps+1], 
+                       info->original_sequence[bps+2]);
+            } else {
+                // Debug: show what canonical sequence was found
+                printf("DONOR_OK:%d[%c%c] ", bps, 
+                       info->original_sequence[bps+1], 
+                       info->original_sequence[bps+2]);
+            }
             //printf("bps=%d, Donor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
-
         }
-        else    pos->xi[bps][0] = 0.0;
-
+        else {
+            pos->xi[bps][0] = 0.0;
+        }
+        
+        // Process acceptor sites (state 1)
         fw = alpha->a[bps-1][1];
         bw = beta->b[bps][1];
-
+        
         if (fw != 0.0 && bw != 0.0) {
             xi = fw+bw;
             pos->xi[bps][1] = xi;
+            printf("%d ", bps);
+            
+            // Check if this acceptor site is canonical
+            if (!check_splice_site(info, bps, 1)) {
+                printf("BUG: Non-canonical acceptor site at position %d - ", bps);
+                printf("Expected AG at positions %d,%d but found %c%c\n", 
+                       bps-1, bps, 
+                       info->original_sequence[bps-1], 
+                       info->original_sequence[bps]);
+            } else {
+                // Debug: show what canonical sequence was found
+                printf("ACCEPTOR_OK:%d[%c%c] ", bps, 
+                       info->original_sequence[bps-1], 
+                       info->original_sequence[bps]);
+            }
             //printf("bps=%d, Acceptor: fw=%e, bw=%e, xi=%e\n", bps, fw, bw, xi);
         }
-        else    pos->xi[bps][1] = 0.0;
+        else {
+            pos->xi[bps][1] = 0.0;
+        }
     }
 }
 
