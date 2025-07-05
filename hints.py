@@ -2,22 +2,27 @@ import subprocess
 import os
 import isoform2
 
+############################################################
+######################## HMM Parser### #####################
+############################################################
 
 def run_hmm(hmm, fasta):
-    ''' cmd to run hmm2'''
+    ''' cmd to run hmm2 with new flag-based interface'''
     dir     = os.path.dirname(hmm)
     models  = os.path.join(dir, "models")
     
-    input = [
-        os.path.join(models, "don.pwm"),
-        os.path.join(models, "acc.pwm"),
-        os.path.join(models, "exon.mm"),
-        os.path.join(models, "intron.mm"),
-        os.path.join(models, "exon.len"),
-        os.path.join(models, "intron.len")
+    cmd = [
+        hmm,
+        "--sequence", fasta,
+        "--print_splice",                                       # Enable splice site printing
+        "--don_emission", os.path.join(models, "don.pwm"),
+        "--acc_emission", os.path.join(models, "acc.pwm"),
+        "--exon_emission", os.path.join(models, "exon.mm"),
+        "--intron_emission", os.path.join(models, "intron.mm"),
+        "--ped_exon", os.path.join(models, "exon.len"),
+        "--ped_intron", os.path.join(models, "intron.len")
     ]
     
-    cmd = [hmm, fasta] + input
     result = subprocess.run(cmd, check=True, text=True, capture_output=True)
     
     return result.stdout
@@ -64,16 +69,27 @@ def parse(output):
     
     return dons, accs
 
-def gtag_sites(seq, flank, minex, minin):
+def mgtag_sites(seq, flank, minex, minin):
     dons = []
     accs = []
+    
     for i in range(flank + minex, len(seq) - flank - minex):
         if seq[i:i+2] == 'GT':
             dons.append(i)
         if seq[i-1:i+1] == 'AG':
             accs.append(i)
     
-    return dons, accs
+    ndons = []
+    naccs = []
+    
+    if dons and accs:
+        first_donor   = dons[0]
+        last_acceptor = accs[-1]
+
+        naccs = [acc for acc in accs if acc >= first_donor + minin - 1]        
+        ndons = [don for don in dons if don <= last_acceptor - minin + 1]
+    
+    return ndons, naccs
 
 def gapstats(sites):
     ''' Gap statistic to find significant splice sites '''

@@ -3,7 +3,7 @@
 
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
 #define FLANK 99                        // define the global flank size
-#define DEBUG 2                         // if this is 1, it would print out everything
+#define DEBUG 3                         // if this is 1, it would print out everything
 
 typedef struct                          // observed events with length T
 {
@@ -54,14 +54,14 @@ typedef struct
 {
     double **a;                         // alpha for forward algorithm
     double **basis;                     // each previous layer of calculation
-    int    lbound;                      // where the first donor site appear
+    int    first_dons;                  // where the first donor site appear
 } Forward_algorithm;
 
 typedef struct
 {
     double **b;                         // beta for backward algorithm
     double **basis;                     // times of transition prob and emission prob
-    int    rbound;                      // where the first acceptor site appear
+    int    last_accs;                   // where the first acceptor site appear
 } Backward_algorithm;                   
 
 typedef struct

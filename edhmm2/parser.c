@@ -8,15 +8,13 @@
  * ==================== Seq reader ==================== *
  * ==================================================== */
 
-void read_sequence_file(const char *filename, Observed_events *info)
-{
-    if (DEBUG == 1 || DEBUG == 2)   printf("Start reading the sequence data:\n");
+void read_sequence_file(const char *filename, Observed_events *info) {
+    if (DEBUG == 1 || DEBUG == 2) printf("Start reading the sequence data:\n");
 
     FILE *file = fopen(filename, "r");
     
-    if (file == NULL)
-    {
-        if (DEBUG == 1 || DEBUG == 2)   printf("Error: Cannot open sequence file %s\n", filename);
+    if (file == NULL) {
+        if (DEBUG == 1 || DEBUG == 2) printf("Error: Cannot open sequence file %s\n", filename);
         return;
     }
     
@@ -31,17 +29,19 @@ void read_sequence_file(const char *filename, Observed_events *info)
     char *sequence = (char*)malloc(file_size + 1);
 
     size_t seq_index = 0;
+    int in_header = 0;
     
-    // Parse each line
     char *line = strtok(buffer, "\n");
-    while (line != NULL)
-    {
+    while (line != NULL) {
+        if (line[0] == '>') {
+            in_header = 1;
+            if (DEBUG == 1 || DEBUG == 2) printf("\tSkipping header: %s\n", line);
+            line = strtok(NULL, "\n");
+            continue;
+        }
         
-        // Extract valid DNA characters
-        for (int i = 0; line[i] != '\0'; i++)
-        {
-            if (line[i] == 'A' || line[i] == 'C' || line[i] == 'G' || line[i] == 'T')
-            {
+        for (int i = 0; line[i] != '\0'; i++) {
+            if (line[i] == 'A' || line[i] == 'C' || line[i] == 'G' || line[i] == 'T') {
                 sequence[seq_index++] = line[i];
             }
         }
@@ -50,17 +50,17 @@ void read_sequence_file(const char *filename, Observed_events *info)
     }
     
     sequence[seq_index] = '\0';
-        sequence = (char*)realloc(sequence, seq_index + 1);
+    sequence = (char*)realloc(sequence, seq_index + 1);
     
     info->original_sequence = sequence;
-    info->T = seq_index; 
+    info->T = seq_index;
     
     free(buffer);
     fclose(file);
 
-    if (DEBUG == 1 || DEBUG == 2)   printf("\tWe get original sequence with Seq len: %zu\n", seq_index);
-    if (DEBUG == 1 || DEBUG == 2)   printf("\tFinished\n");
-    if (DEBUG == 1 || DEBUG == 2)   printf("\n");
+    if (DEBUG == 1 || DEBUG == 2) printf("\tWe get original sequence with Seq len: %zu\n", seq_index);
+    if (DEBUG == 1 || DEBUG == 2) printf("\tFinished\n");
+    if (DEBUG == 1 || DEBUG == 2) printf("\n");
 }
 
 /* ==================================================== *

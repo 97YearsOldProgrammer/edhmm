@@ -4,59 +4,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ==================================================== *
+ * =============== HMM Hints_output =================== *
+ * ==================================================== */
+
 void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed)
 {
-    // Use much smaller epsilon - your values are around 1e-25 to 1e-30
-    const double epsilon = 1e-300;  // Way smaller than 1e-14
-    int start_pos = FLANK + ed->min_len_exon;
-    int end_pos = info->T - FLANK - ed->min_len_exon - 1;
-    
-    if (DEBUG == 1) {
-        printf("=== Splice Site Output ===\n");
-        printf("Analysis range: %d to %d\n", start_pos, end_pos);
-        printf("Using epsilon = %e\n", epsilon);
-    }
-    
-    // Find maximum probabilities for relative scoring
-    double max_donor = 0.0, max_acceptor = 0.0;
-    for(int i = start_pos; i < end_pos; i++) {
-        if (pos->xi[i][0] > max_donor) max_donor = pos->xi[i][0];
-        if (pos->xi[i][1] > max_acceptor) max_acceptor = pos->xi[i][1];
-    }
-    
-    if (DEBUG == 1) {
-        printf("Max donor prob = %e, Max acceptor prob = %e\n", max_donor, max_acceptor);
-    }
-    
     printf("DONS\n");
-    int donor_count = 0;
-    for(int i = start_pos; i < end_pos; i++)
-    {
-        if (pos->xi[i][0] > epsilon)
-        {
-            // Calculate relative score (0-100)
-            double relative_score = (max_donor > 0) ? (pos->xi[i][0] / max_donor) * 100.0 : 0.0;
-            printf("%d\t%.6e\t%.2f\n", i+1, pos->xi[i][0], relative_score);
-            donor_count++;
+    for (int i = FLANK; i < info->T-FLANK; i++) {
+        if (pos->xi[i][0] != 0.0) {
+            printf("%d\t%.10f\n", i, pos->xi[i][0]);
         }
     }
-    
-    if (DEBUG == 1) printf("Found %d potential donor sites\n", donor_count);
     
     printf("ACCS\n");
-    int acceptor_count = 0;
-    for(int i = start_pos; i < end_pos; i++)
-    {
-        if (pos->xi[i][1] > epsilon)
-        {
-            // Calculate relative score (0-100)
-            double relative_score = (max_acceptor > 0) ? (pos->xi[i][1] / max_acceptor) * 100.0 : 0.0;
-            printf("%d\t%.6e\t%.2f\n", i+1, pos->xi[i][1], relative_score);
-            acceptor_count++;
+    for (int i = FLANK; i < info->T-FLANK; i++) {
+        if (pos->xi[i][1] != 0.0) {  
+            printf("%d\t%.10f\n", i, pos->xi[i][1]);
         }
     }
-    
-    if (DEBUG == 1) printf("Found %d potential acceptor sites\n", acceptor_count);
 }
 
 /* ==================================================== *
@@ -240,48 +206,3 @@ void print_duration_summary(Explicit_duration *ed)
     
     printf("==================================\n\n");
 }
-
-/*
-void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed)
-{
-    const double epsilon = 1e-25;
-
-    int start_pos   = FLANK + ed->min_len_exon;
-    int end_pos     = info->T - FLANK - ed->min_len_exon - 1;
-    
-    if (DEBUG == 1)
-    {
-        printf("=== Splice Site Output ===\n");
-        printf("Analysis range: %d to %d\n", start_pos, end_pos);
-        printf("FLANK=%d, min_len_exon=%d, T=%d\n", FLANK, ed->min_len_exon, info->T);
-    }
-    
-    printf("DONS\n");
-
-    int donor_count = 0;
-    for( int i = start_pos; i < end_pos; i++ )
-    {
-        if (pos->xi[i][0] > epsilon)
-        {
-            printf("%d\t%.10f\n", i+1, pos->xi[i][0]);
-            donor_count++;
-        }
-    }
-    
-    if (DEBUG == 1) printf("Found %d potential donor sites\n", donor_count);
-    
-    printf("ACCS\n");
-
-    int acceptor_count = 0;
-    for( int i = start_pos; i < end_pos; i++ )
-    {
-        if (pos->xi[i][1] > epsilon)
-        {  
-            printf("%d\t%.10f\n", i+1, pos->xi[i][1]);
-            acceptor_count++;
-        }
-    }
-    
-    if (DEBUG == 1) printf("Found %d potential acceptor sites\n", acceptor_count);
-}
-*/

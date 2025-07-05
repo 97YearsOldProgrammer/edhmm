@@ -193,7 +193,7 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     int donor = -1;
     char *seq = info->original_sequence;
 
-    for (int i = FLANK+ed->min_len_exon ; i < info->T-FLANK-ed->min_len_exon ; i++) {
+    for (int i = FLANK+ed->min_len_exon+1 ; i < info->T-FLANK-ed->min_len_exon-1 ; i++) {
        if (seq[i] == 'G' && seq[i+1] == 'T') {
            donor = i;
            break;
@@ -207,10 +207,10 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
         return;
     }
 
-    alpha->lbound = donor;
+    alpha->first_dons = donor;
 
     // boundary check
-    tau = info->T-FLANK-ed->min_len_exon - donor+1;
+    tau = info->T-FLANK-ed->min_len_exon - donor;
     if (tau > ed->max_len_exon)   tau = ed->max_len_exon;
 
     if (DEBUG == 1 || DEBUG == 2) printf("Processing exon region from %d to %d (tau=%d)\n", FLANK, donor, tau); 
@@ -220,11 +220,11 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
 
     int duration = -1;
     for (int bps = FLANK ; bps < donor+1 ; bps++) {
-        duration++;
         idx_em_prob = base4_to_int(info->numerical_sequence, bps-3, 4);
         em_prob     = l->B.exon[idx_em_prob];
         alpha_sum   = alpha_sum+em_prob;
 
+        duration++;
         if (bps == donor-1 || bps == donor) {
             ed_prob      = ed->exon[duration];
 
@@ -250,7 +250,6 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
             a(0)(intron, d) = α(-1)(exon, 0) * a(exon|intron) * bintron(o0) * pintron(d)
     aka               total = pi * tprob * emprob * edprob
     */
-    tau = info->T-FLANK-ed->min_len_exon - donor+1;
     if  (tau > ed->max_len_intron)  tau = ed->max_len_intron;
 
     em_prob         = l->B.intron[idx_em_prob];
@@ -294,12 +293,11 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                    multiply by transition probability from n to m,
                    then add emission and duration prob for new state m.
     */
-
     if (DEBUG == 1 || DEBUG == 2) printf("Start computation for forward algorithm:\n");
 
-    int start = alpha->lbound + 1;
-    int end   = info->T - FLANK - ed->min_len_exon;
-    int tau   = end-start+2;
+    int start = alpha->first_dons+1;
+    int end   = info->T-FLANK-ed->min_len_exon;
+    int tau   = end-start+1;
     int bound;
 
     for (int bps = start; bps < end; bps++) {
@@ -335,7 +333,7 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
             tran_node = alpha->a[bps - 1][con_hs];
 
             for (int i = 0; i < tau; i++) {
-                cont_node = (i != tau - 1) ? alpha->basis[hs][i + 1] : 0.0;
+                cont_node = (i != tau - 1) ? alpha->basis[hs][i+1] : 0.0;
 
                 double cont_sum;
                 double tran_sum;
@@ -343,7 +341,7 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
                 if (cont_node == 0.0)   cont_sum = 0.0;
                 else                    cont_sum = cont_node + em_prob;
 
-                ed_prob = (hs == 0) ? ed->intron[i] : ed->exon[i];
+                ed_prob = (hs == 0) ? ed->exon[i] : ed->intron[i];
 
                 if (tran_node == 0.0 || tran_prob == 0.0 || ed_prob == 0.0) {
                     tran_sum = 0.0;
@@ -396,15 +394,15 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
     char *seq = info->original_sequence;
     int  accs;
 
-    for (int i = info->T-FLANK-ed->min_len_exon; i > FLANK+ed->min_len_exon-1; i--) {
-       if (seq[i] == 'A' && seq[i+1] == 'G') {
+    for (int i = info->T-FLANK-ed->min_len_exon-1 -1; i > FLANK+ed->min_len_exon; i--) {
+        if (seq[i-1] == 'A' && seq[i] == 'G') {
            accs = i+1;
            break;
        }
     }
 
     if (DEBUG == 1 || DEBUG == 2) printf("\nStart compute backward basis from %d to %d", accs, info->T-FLANK);
-    beta->rbound = accs;
+    beta->last_accs = accs;
 
     // compute the bw exon until first accs site
     for (int bps = info->T-FLANK ; bps > accs; bps--) {
@@ -414,7 +412,7 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
     }
 
     int exon_len = info->T-FLANK-accs;
-    beta->basis[0][exon_len+1] = bw_sum;
+    beta->basis[0][exon_len] = bw_sum;
 
     // update the intron basis
     idx_tran_prob  = base4_to_int(info->numerical_sequence, accs-5, 6);
@@ -432,11 +430,29 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
 }
 
 void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed) {
+    /*
+    Backward recursion formula for duration-based HMM:
 
+    Case 1: d > 1
+    β_t(m, d) = b_m(o_{t+1}) * β_{t+1}(m, d - 1)
+
+        Logic:
+        - When remaining duration d > 1, we stay in the same state m.
+        - Emit observation o_{t+1} using b_m(o_{t+1}).
+        - Reduce duration by 1 and move to next time step.
+
+    Case 2: d == 1
+    β_t(m, 1) = sum over n ≠ m of [ a_mn * b_n(o_{t+1}) * sum_{d' ≥ 1} (p_n(d') * β_{t+1}(n, d')) ]
+
+        Logic:
+        - When duration is exhausted (d == 1), we must transition to a new state n ≠ m.
+        - Transition with a_mn, emit o_{t+1} with b_n(o_{t+1}),
+          and sum over all durations d' ≥ 1 of the new state with duration probability p_n(d').
+    */
     if (DEBUG == 1 || DEBUG == 2)     printf("Start Backward Algorithm:");
 
-    int start = beta->rbound-1;
-    int end   = FLANK+ed->min_len_exon-1;
+    int start = beta->last_accs-1;
+    int end   = FLANK;
     int tau;                    // [tau]    : the residual bound for hidden state
     
     if (DEBUG == 1 || DEBUG == 2)   printf("\n\tCompute from region %d to %d", start, end);
@@ -492,9 +508,6 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
             beta->b[bps][hs] = bw_sum;
         }
 
-        // don't continue computation when reach left bound
-        if  (bps == end+1) break;
-
         for (int hs = 0 ; hs < HS ; hs++) {
 
             idx_em_prob = base4_to_int(info->numerical_sequence, bps-2, 4);
@@ -530,26 +543,24 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
     double xi;      // [xi]    :   greek letter for pos_prob
     
     for (int bps = FLANK ; bps < info->T-FLANK ; bps++) {
-        // Process donor sites (state 0)
-        fw = alpha->a[bps][0];
-        bw = beta->b[bps][0];
-        
+        //donor
+        fw = alpha->a[bps-1][0];
+        bw = beta->b[bps-1][0];
+
         if (fw != 0.0 && bw != 0.0) {
             xi = fw+bw;
             pos->xi[bps][0] = xi;
-            printf("%d ", bps);
         } else {
             pos->xi[bps][0] = 0.0;
         }
-        
-        // Process acceptor sites (state 1)
-        fw = alpha->a[bps-1][1];
+
+        // accetor
+        fw = alpha->a[bps][1];
         bw = beta->b[bps][1];
         
         if (fw != 0.0 && bw != 0.0) {
             xi = fw+bw;
             pos->xi[bps][1] = xi;
-            printf("%d ", bps);
         } else {
             pos->xi[bps][1] = 0.0;
         }
