@@ -24,6 +24,56 @@ void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration 
         }
     }
 }
+/* ==================================================== *
+ * ============== Stochiastic Viterbi ================= *
+ * ==================================================== */
+
+typedef struct {
+    int     bps_doa;
+    double  doa
+} Vit;
+
+Vit nearest_neightbour(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, int bps, int state) {
+    /*
+        state 0 : find next donor
+        state 1 : find next acceptor
+    */
+    Vit result;
+    result.bps_doa = 0;
+    result.doa     = 0.0;
+
+    int distance = 0;
+    int bound    = (state == 0) ? ed->min_len_intron : ed->min_len_exon;
+
+    for (int i = bps ; i > FLANK; i--) {
+        distance++;
+        if (pos->xi[i][0] != 0.0 && distance > bound) {
+            result.doa     = pos->xi[i][state];
+            result.bps_doa = bps;
+            break;
+        }
+    }
+
+    return result;
+}
+
+double log_sub_add_exp(double gamma, double dons, double accs) {
+    double max      = fmax(fmax(gamma, accs), dons);
+    double result   = exp(gamma-max) - exp(dons-max) + exp(accs-max);
+
+    if (result <= 0)    return 0.0;
+    return max+log(result);
+}
+
+void sto_vit(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, int state, int bps, double exon, double intron) {
+    Vit result = nearest_neightbour(&pos, &info, &ed, bps);
+
+    double new_exon     = log_sub_add_exp(exon  , result.accs, result.dons);
+    double new_intron   = log_sub_add_exp(intron, result.dons, result.accs);
+
+    if (new_exon <-)
+
+}
 
 /* ==================================================== *
  * ============== Parser Debug Output ================= *
