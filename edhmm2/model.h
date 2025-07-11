@@ -64,10 +64,18 @@ typedef struct
     int    last_accs;                   // where the first acceptor site appear
 } Backward_algorithm;                   
 
+// for HMM hints
 typedef struct
 {
     double **xi;
 } Pos_prob;
+
+// for sto vit output
+typedef struct {
+    int     bps_position[200];
+    double  scores[200];
+    int     count;
+} Isoform;
 
 /* ======================= Function Declarations ======================= */
 

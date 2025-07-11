@@ -181,8 +181,7 @@ void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, 
     if( DEBUG == 1 || DEBUG == 2 )  printf("Start forward algorithm basis calculation:");
 
     int     tau;                    // [tau]        :   residential time        aka: possible explicit duration
-    int     idx_em_prob;
-    int     idx_tran_prob;
+    int     idx_em_prob, idx_tran_prob;
 
     double  em_prob;                // [em_prob]    :   bm(o1)                  aka: emission probability
     double  tran_prob;              // [tprob]      :   a(mn)                   aka: transition probability
@@ -304,15 +303,8 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
         tau--;
 
         for (int hs = 0; hs < HS; hs++) {
-            double tran_prob;
-            double ed_prob;
-            double em_prob;
-            double tran_node;
-            double cont_node;
-
-            int idx_tran_prob;
-            int idx_em_prob;
-            int con_hs;
+            double  tran_prob, ed_prob, em_prob, tran_node, cont_node;
+            int     idx_tran_prob, idx_em_prob, con_hs;
 
             bound = (hs == 0) ? ed->max_len_exon : ed->max_len_intron;
             if (tau >= bound)   tau = bound;
@@ -335,8 +327,7 @@ void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explici
             for (int i = 0; i < tau; i++) {
                 cont_node = (i != tau - 1) ? alpha->basis[hs][i+1] : 0.0;
 
-                double cont_sum;
-                double tran_sum;
+                double cont_sum, tran_sum;
 
                 if (cont_node == 0.0)   cont_sum = 0.0;
                 else                    cont_sum = cont_node + em_prob;
@@ -387,8 +378,7 @@ void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, E
     double bw_sum = 0.0;        // [bw_sum]     : arbitrary reused computation variable
     double tran_prob;           // [tran_prob]  : a(mn)
 
-    int    idx_em_prob;
-    int    idx_tran_prob;
+    int    idx_em_prob, idx_tran_prob;
 
     // find first accs site from RHS
     char *seq = info->original_sequence;
@@ -466,8 +456,7 @@ void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explici
         double bw_sum;          // [bw_sum]     : see note in first part                aka: backward sum
 
         int    con_hs;          // [con_hs]     : conjugated hidden state
-        int    idx_tran_prob;   
-        int    idx_em_prob;
+        int    idx_tran_prob, idx_em_prob;   
 
         for (int hs = 0 ; hs < HS ; hs++) {
 
