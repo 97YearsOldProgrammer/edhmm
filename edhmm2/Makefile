@@ -43,7 +43,7 @@ test: edhmm2
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--verbose
- 
+
 hint: edhmm2
 	./edhmm2 --sequence seq \
 		--don_emission ../models/don.pwm \
@@ -54,15 +54,52 @@ hint: edhmm2
 		--ped_intron ../models/intron.len \
 		--print_splice
 
+sto: edhmm2
+	@echo "Running stochastic Viterbi with default iterations (2)"
+	./edhmm2 --sequence seq \
+		--don_emission ../models/don.pwm \
+		--acc_emission ../models/acc.pwm \
+		--exon_emission ../models/exon.mm \
+		--intron_emission ../models/intron.mm \
+		--ped_exon ../models/exon.len \
+		--ped_intron ../models/intron.len \
+		--sto_viterbi
+
+sto-verbose: edhmm2
+	@echo "Running stochastic Viterbi with verbose output"
+	./edhmm2 --sequence seq \
+		--don_emission ../models/don.pwm \
+		--acc_emission ../models/acc.pwm \
+		--exon_emission ../models/exon.mm \
+		--intron_emission ../models/intron.mm \
+		--ped_exon ../models/exon.len \
+		--ped_intron ../models/intron.len \
+		--sto_viterbi --verbose
+
+sto-custom: edhmm2
+	@echo "Running stochastic Viterbi with custom iterations (5)"
+	./edhmm2 --sequence seq \
+		--don_emission ../models/don.pwm \
+		--acc_emission ../models/acc.pwm \
+		--exon_emission ../models/exon.mm \
+		--intron_emission ../models/intron.mm \
+		--ped_exon ../models/exon.len \
+		--ped_intron ../models/intron.len \
+		--sto_viterbi --sto_iterations 5
+
+sto-short: edhmm2
+	@echo "Running stochastic Viterbi (short flags)"
+	./edhmm2 -s seq -S -t 3
+
 test-short: edhmm2
 	@echo "Running test (short flags)"
 	./edhmm2 -s seq -v
 
-hint-short: edhmm2  
+hint-short: edhmm2
 	@echo "Running hint (short flags)"
 	./edhmm2 -s seq -p
 
 help: edhmm2
 	./edhmm2 --help
 
-.PHONY: all clean debug test hint test-short hint-short help
+.PHONY: all clean debug test hint sto sto-verbose sto-custom sto-short test-short hint-short help

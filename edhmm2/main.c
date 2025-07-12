@@ -18,12 +18,15 @@ void print_usage(const char *program_name) {
     printf("  -n, --ped_intron FILE         Intron length distribution file (default: ../models/intron.len)\n");
     printf("\nOutput control:\n");
     printf("  -p, --print_splice            Print detailed splice site analysis\n");
+    printf("  -S, --sto_viterbi             Use stochastic Viterbi algorithm\n");
+    printf("  -t, --sto_iterations NUM      Number of iterations for stochastic Viterbi (default: 2)\n");
     printf("  -v, --verbose                 Show progress and debug information\n");
     printf("  -h, --help                    Show this help message\n");
     printf("\nExamples:\n");
     printf("  %s --sequence input.fasta \n", program_name);
     printf("  %s -s input.fasta --print_splice\n", program_name);
-    printf("  %s -s input.fasta --print_splice --verbose\n", program_name);
+    printf("  %s -s input.fasta --sto_viterbi --sto_iterations 5\n", program_name);
+    printf("  %s -s input.fasta -S -t 3 --verbose\n", program_name);
 }
 
 int main(int argc, char *argv[])
@@ -46,6 +49,8 @@ int main(int argc, char *argv[])
     char *seq_input = NULL;
     int print_splice_detailed = 0;
     int verbose = 0;
+    int sto_iterations = 2;
+    int use_sto_viterbi = 0;
 
     // Define long options
     static struct option long_options[] = {
@@ -58,6 +63,8 @@ int main(int argc, char *argv[])
         {"ped_intron",      required_argument, 0, 'n'},
         {"print_splice",    no_argument,       0, 'p'},
         {"verbose",         no_argument,       0, 'v'},
+        {"sto_viterbi",     no_argument,       0, 'S'},
+        {"sto_iterations",  required_argument, 0, 't'},
         {"help",            no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
@@ -98,6 +105,16 @@ int main(int argc, char *argv[])
             case 'h':
                 print_usage(argv[0]);
                 return 0;
+            case 'S':
+                use_sto_viterbi = 1;
+                break;
+            case 't':
+                sto_iterations = atoi(optarg);
+                if (sto_iterations < 1) {
+                    fprintf(stderr, "Error: --sto_iterations must be >= 1\n");
+                    return 1;
+                }
+                break;
             case '?':
                 // getopt_long already printed an error message
                 print_usage(argv[0]);
@@ -216,7 +233,26 @@ int main(int argc, char *argv[])
     // Posterior probability
     pos_prob(&bw, &fw, &info, &pos);
 
-    // Output - controlled by --print_splice flag (like argparse boolean)
+    if (use_sto_viterbi) {
+        if (verbose) {
+            printf("\n=== Running Stochastic Viterbi Algorithm ===");
+            printf("Initial Iteration: %d\n", sto_iterations);
+        }
+
+        Isoform iso;
+        memset(&iso, 0, sizeof(Isoform));
+
+        int    start_bps    = info.T-FLANK-ed.min_len_exon;
+        double init_exon    = fw.basis[0][0];
+        double init_intron  = fw.basis[1][0];
+
+        if (verbose) printf("Starting from position: %d\n\n", start_bps);
+        sto_vit(    &pos, &info, &ed, &iso, 
+                    1, start_bps, 0, sto_iterations, init_exon, init_intron);
+
+        if (verbose) printf("=== Stochastic Viterbi Complete ===\n");
+    }
+
     if (print_splice_detailed) {
         print_splice_sites(&pos, &info, &ed);
         
@@ -226,7 +262,6 @@ int main(int argc, char *argv[])
             printf("fw.basis[1][0] (intron)= %.10f\n", fw.basis[1][0]);
         }
     } else {
-        // Default behavior when --print_splice is not used
         if (verbose) {
             printf("Use --print_splice to see detailed splice site analysis\n");
         }

@@ -77,6 +77,23 @@ typedef struct {
     int     count;
 } Isoform;
 
+typedef struct {
+    int     bps; 
+    double  doa;
+    int     count;
+} Vit;
+
+typedef struct {
+    int     *bps_array;
+    double  *doa_array;
+    int     count;
+} Vit_result;
+
+typedef struct {
+    double max_val, sec_val;
+    int    max_bps, sec_bps;
+} Top2Result;
+
 /* ======================= Function Declarations ======================= */
 
 /* ===== Sequence reading ===== */
@@ -94,6 +111,8 @@ int    power(int base, int exp);
 int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
+double log_add_exp(double a, double b);
+double log_sub_exp(double a, double b);
 void   tolerance_checker(double *array, int len, const double epsilon);
 void   log_space_converter(double *array, int len);
 
@@ -123,5 +142,16 @@ void index_to_sequence(int index, int length, char *seq);
 void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
 void print_duration_summary(Explicit_duration *ed);
+
+/* ===== Stochiastic Viterbi ===== */
+Vit nearest_neightbour(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, int bps, int state);
+Vit_result n_nearest_neightbour(    Pos_prob *pos, Observed_events *info, Explicit_duration *ed,
+                                    int init_bps, int state, int iteration);
+void free_vit_results(Vit_result *results);
+Top2Result find_top2(double *vals, int *pos, int count);
+void print_isoform(Isoform *iso, Observed_events *info);
+void sto_vit(   Pos_prob *pos, Observed_events *info, Explicit_duration *ed, Isoform *iso,
+                int state, int bps, int depth, int iteration,
+                double exon, double intron);
 
 #endif

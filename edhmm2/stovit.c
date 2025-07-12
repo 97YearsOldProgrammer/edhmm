@@ -30,7 +30,7 @@ Vit nearest_neightbour(Pos_prob *pos, Observed_events *info, Explicit_duration *
         distance++;
         if (pos->xi[i][0] != 0.0 && distance > bound) {
             result.doa = pos->xi[i][state];
-            result.bps = bps;
+            result.bps = i;
             break;
         }
     }
@@ -94,29 +94,42 @@ double log_add_exp(double a, double b) {
     return max + log1p(exp(min - max));
 }
 
-typedef struct {
-    double max_val, sec_val;
-    int    max_idx, sec_idx;
-} Top2Result;
-
-Top2Result find_top2(double *array, int count) {
+Top2Result find_top2(double *vals, int *pos, int count) {
     Top2Result result = {-0.0, -0.0, 0, 0};
     
     if (count == 0) return result;
     
     for (int i = 0; i < count; i++) {
-        if (array[i] > result.max_val) {
+        if (vals[i] > result.max_val) {
             result.sec_val = result.max_val;
-            result.sec_idx = result.max_idx;
-            result.max_val = array[i];
-            result.max_idx = i;
-        } else if (array[i] > result.sec_val) {
-            result.sec_val = array[i];
-            result.sec_idx = i;
+            result.sec_bps = result.max_bps;
+            result.max_val = vals[i];
+            result.max_bps = pos[i];
+        } else if (vals[i] > result.sec_val) {
+            result.sec_val = vals[i];
+            result.sec_bps = pos[i];
         }
     }
     
     return result;
+}
+
+void print_isoform(Isoform *iso, Observed_events *info) {
+    int con_print;
+    int beg = iso->bps_position[iso->count-1];
+    int end = iso->bps_position[0];
+    printf("mRNA\t%i\t%i\t%f\n", beg, end, log_sum_exp(iso->scores, iso->count));
+
+    for (int i = iso->count; i > 0; i++) {
+        if (i % 2 == 0) {
+            printf("Exon\t%i\t%i\t%f\n", iso->bps_position[i], iso->bps_position[i-1], iso->scores[i]);
+        } else {
+            printf("Intron\t%i\t%i\t%f\n", iso->bps_position[i], iso->bps_position[i-1], iso->scores[i]);
+        }
+    }
+
+    printf("Exon\t%i\t%i\t%f\n", iso->bps_position[0], info->T-FLANK, iso->scores[0]);
+    printf("\n");
 }
 
 void sto_vit(   Pos_prob *pos, Observed_events *info, Explicit_duration *ed, Isoform *iso,
@@ -126,30 +139,38 @@ void sto_vit(   Pos_prob *pos, Observed_events *info, Explicit_duration *ed, Iso
     // find next donor or acceptor
     Vit_result results = n_nearest_neightbour(&pos, &info, &ed, bps, state, iteration);
     // find top 2 values and indices
-    Top2Result top2 = find_top2(results.doa_array, results.count);
+    Top2Result top2 = find_top2(results.doa_array, results.bps_array, results.count);
+
+    // exit mechanism
+    if (top2.max_bps == 0 && top2.sec_bps == 0) {
+        if (state == 0) print_isoform(&iso, &info);
+        return;
+    }
 
     // prepare for recursion arg_max isoform
-    double next_exon, next_intron;
+    double win_exon, win_intron, lose_exon, lose_intron;
 
     if (state == 0) {
-        next_exon   = log_sub_exp(exon,     top2.max_val);
-        next_intron = log_add_exp(intron,   top2.max_val);
+        win_exon    = log_sub_exp(exon,     top2.max_val);
+        win_intron  = log_add_exp(intron,   top2.max_val);
+        lose_exon   = log_sub_exp(exon,     top2.sec_val);
+        lose_intron = log_add_exp(intron,   top2.sec_val);
     } else {
-        next_exon   = log_add_exp(exon,     top2.max_val);
-        next_intron = log_sub_exp(intron,   top2.max_val);
+        win_exon    = log_add_exp(exon,     top2.max_val);
+        win_exon    = log_sub_exp(intron,   top2.max_val);
+        lose_exon   = log_add_exp(exon,     top2.sec_val);
+        lose_intron = log_sub_exp(intron,   top2.sec_val);
     }
+
+    free_vit_results(&results);
 
     iso->scores[depth]          = top2.max_val;
-    iso->bps_position[depth]    = top2.max_idx;
+    iso->bps_position[depth]    = top2.max_bps;
     iso->count = depth;
-    sto_vit(&pos, &info, &ed, &iso, (state == 0)?1:0 , top2.max_idx, depth+1, iteration, next_exon, next_intron);
+    sto_vit(&pos, &info, &ed, &iso, (state == 0)?1:0 , top2.max_bps, depth+1, iteration, win_exon, win_intron);
 
-    // prepare for secondary recursion 
-    if (state == 0) {
-        next_exon   = log_sub_exp(exon,     top2.sec_val);
-        next_intron = log_add_exp(intron,   top2.sec_val);
-    } else {
-        next_exon   = log_add_exp(exon,     top2.sec_val);
-        next_intron = log_sub_exp(exon,     top2.sec_val);
-    }
+    iso->scores[depth]          = top2.sec_val;
+    iso->bps_position[depth]    = top2.sec_bps;
+    iso->count = depth;
+    sto_vit(&pos, &info, &ed, &iso, (state == 0)?1:0 , top2.sec_bps, depth+1, iteration+2, lose_exon, lose_intron);
 }
