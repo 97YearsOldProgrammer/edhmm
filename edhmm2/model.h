@@ -65,24 +65,15 @@ typedef struct
 } Backward_algorithm;                   
 
 // for HMM hints
-typedef struct
-{
+typedef struct {
     double **xi;
+    double *dons_val;
+    double *accs_val;
+    int    *dons_bps;
+    int    *accs_bps;
 } Pos_prob;
 
 // for sto vit output
-typedef struct {
-    int     bps_position[200];
-    double  scores[200];
-    int     count;
-} Isoform;
-
-typedef struct {
-    int     bps; 
-    double  doa;
-    int     count;
-} Vit;
-
 typedef struct {
     int     *bps_array;
     double  *doa_array;
@@ -93,6 +84,12 @@ typedef struct {
     double max_val, sec_val;
     int    max_bps, sec_bps;
 } Top2Result;
+
+typedef struct {
+    int     bps_position[200];
+    double  scores[200];
+    int     count;
+} Isoform;
 
 /* ======================= Function Declarations ======================= */
 
@@ -140,12 +137,13 @@ void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_event
 /* ===== Output ===== */
 void index_to_sequence(int index, int length, char *seq);
 void print_transition_matrices_summary(Lambda *l);
-void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
+void print_splice_sites(Pos_prob *pos, Observed_events *info);
 void print_duration_summary(Explicit_duration *ed);
 
 /* ===== Stochiastic Viterbi ===== */
-Vit nearest_neightbour(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, int bps, int state);
-Vit_result n_nearest_neightbour(    Pos_prob *pos, Observed_events *info, Explicit_duration *ed,
+void parse_splice_sites(Pos_prob *pos, Observed_events *info);
+void free_splice_sites(Pos_prob *pos);
+Vit_result n_nearest_neightbour(    Pos_prob *pos, Explicit_duration *ed,
                                     int init_bps, int state, int iteration);
 void free_vit_results(Vit_result *results);
 Top2Result find_top2(double *vals, int *pos, int count);

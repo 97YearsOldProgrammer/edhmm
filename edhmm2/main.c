@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "s:o:d:a:e:i:x:n:pvh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:pvSt:h", long_options, &option_index)) != -1) {
         switch (c) {
             case 's':
                 seq_input = optarg;
@@ -242,19 +242,22 @@ int main(int argc, char *argv[])
         Isoform iso;
         memset(&iso, 0, sizeof(Isoform));
 
-        int    start_bps    = info.T-FLANK-ed.min_len_exon;
+        int    start_bps    = info.T-FLANK;
         double init_exon    = fw.basis[0][0];
         double init_intron  = fw.basis[1][0];
 
+        parse_splice_sites(&pos, &info);
+        printf("This work");
         if (verbose) printf("Starting from position: %d\n\n", start_bps);
         sto_vit(    &pos, &info, &ed, &iso, 
-                    1, start_bps, 0, sto_iterations, init_exon, init_intron);
+                    0, start_bps, 0, sto_iterations, init_exon, init_intron);
+        free_splice_sites(&pos);
 
         if (verbose) printf("=== Stochastic Viterbi Complete ===\n");
     }
 
     if (print_splice_detailed) {
-        print_splice_sites(&pos, &info, &ed);
+        print_splice_sites(&pos, &info);
         
         if (verbose) {
             printf("=== Additional Debug Info ===\n");

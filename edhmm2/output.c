@@ -8,7 +8,7 @@
  * =============== HMM Hints_output =================== *
  * ==================================================== */
 
-void print_splice_sites(Pos_prob *pos, Observed_events *info, Explicit_duration *ed)
+void print_splice_sites(Pos_prob *pos, Observed_events *info)
 {
     printf("DONS\n");
     for (int i = FLANK; i < info->T-FLANK; i++) {

@@ -1,8 +1,8 @@
 CC = gcc
-#CFLAGS = -fsanitize=address -g
-CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
+CFLAGS = -fsanitize=address -g
+#CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
 
-OBJS = main.o parser.o model.o output.o
+OBJS = main.o parser.o model.o output.o stovit.o
 
 all: edhmm2
 
@@ -25,6 +25,10 @@ model.o: model.c model.h
 output.o: output.c model.h
 	@echo "Compiling output session"
 	$(CC) $(CFLAGS) -c output.c
+
+stovit.o: stovit.c model.h
+	@echo "Compiling stochastic Viterbi"
+	$(CC) $(CFLAGS) -c stovit.c
 
 clean:
 	@echo "Removing everything but the source file"
