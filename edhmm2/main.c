@@ -1,7 +1,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
-#include "getopt.h"  // Add this for getopt_long
+#include "getopt.h"
 #include "model.h"
 
 void print_usage(const char *program_name) {
@@ -235,9 +235,15 @@ int main(int argc, char *argv[])
 
     if (use_sto_viterbi) {
         if (verbose) {
-            printf("\n=== Running Stochastic Viterbi Algorithm ===");
+            printf("\n=== Running Stochastic Viterbi Algorithm ===\n");
             printf("Initial Iteration: %d\n", sto_iterations);
         }
+
+        // Initialize the duplicate tracker
+        PrintedTracker tracker;
+        tracker.capacity = 100;
+        tracker.count = 0;
+        tracker.printed_isoforms = malloc(tracker.capacity * sizeof(char*));
 
         Isoform iso;
         memset(&iso, 0, sizeof(Isoform));
@@ -247,13 +253,28 @@ int main(int argc, char *argv[])
         double init_intron  = fw.basis[1][0];
 
         parse_splice_sites(&pos, &info);
-        printf("This work");
-        if (verbose) printf("Starting from position: %d\n\n", start_bps);
-        sto_vit(    &pos, &info, &ed, &iso, 
-                    0, start_bps, 0, sto_iterations, init_exon, init_intron);
+        
+        if (verbose) {
+            printf("Starting from position: %d\n", start_bps);
+            printf("Found %d donor sites and %d acceptor sites\n\n", pos.dons, pos.accs);
+        }
+        
+        // Call the improved stochastic Viterbi function
+        sto_vit_fixed(&pos, &info, &ed, &iso, &tracker,
+                      0, start_bps, 0, sto_iterations, init_exon, init_intron);
+        
+        // Clean up tracker memory
+        for (int i = 0; i < tracker.count; i++) {
+            free(tracker.printed_isoforms[i]);
+        }
+        free(tracker.printed_isoforms);
+        
         free_splice_sites(&pos);
 
-        if (verbose) printf("=== Stochastic Viterbi Complete ===\n");
+        if (verbose) {
+            printf("=== Stochastic Viterbi Complete ===\n");
+            printf("Total unique isoforms found: %d\n", tracker.count);
+        }
     }
 
     if (print_splice_detailed) {

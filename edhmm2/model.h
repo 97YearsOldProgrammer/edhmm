@@ -71,7 +71,15 @@ typedef struct {
     double *accs_val;
     int    *dons_bps;
     int    *accs_bps;
+    int    dons;                        // number of dons
+    int    accs;                        // number of accs
 } Pos_prob;
+
+typedef struct {
+    char **printed_isoforms;
+    int capacity;
+    int count;
+} PrintedTracker;
 
 // for sto vit output
 typedef struct {
@@ -90,6 +98,8 @@ typedef struct {
     double  scores[200];
     int     count;
 } Isoform;
+
+
 
 /* ======================= Function Declarations ======================= */
 
@@ -147,9 +157,15 @@ Vit_result n_nearest_neightbour(    Pos_prob *pos, Explicit_duration *ed,
                                     int init_bps, int state, int iteration);
 void free_vit_results(Vit_result *results);
 Top2Result find_top2(double *vals, int *pos, int count);
-void print_isoform(Isoform *iso, Observed_events *info);
-void sto_vit(   Pos_prob *pos, Observed_events *info, Explicit_duration *ed, Isoform *iso,
-                int state, int bps, int depth, int iteration,
-                double exon, double intron);
+char* isoform_to_string(Isoform *iso);
+int is_already_printed(PrintedTracker *tracker, char *iso_str);
+void add_to_printed(PrintedTracker *tracker, char *iso_str);
+void print_isoform_fixed(Isoform *iso, Observed_events *info, PrintedTracker *tracker);
+void sto_vit_fixed(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                   Isoform *iso, PrintedTracker *tracker,
+                   int state, int bps, int depth, int iteration,
+                   double exon, double intron);
+void run_stochastic_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
+
 
 #endif
