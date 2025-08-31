@@ -2,7 +2,16 @@
 #include "stdlib.h"
 #include "string.h"
 #include "getopt.h"
+
 #include "model.h"
+#include "randomf.h"
+
+int     DEBUG               = 0;
+int     use_random_forest   = 0;
+int     n_isoforms          = 10000;
+int     n_trees             = 100;
+char    *json_output        = NULL;
+int use_path_restriction    = 0;
 
 void print_usage(const char *program_name) {
     printf("EDHMM - Explicit Duration Hidden Markov Model for gene prediction\n");
@@ -16,41 +25,38 @@ void print_usage(const char *program_name) {
     printf("  -i, --intron_emission FILE    Intron emission file (default: ../models/intron.mm)\n");
     printf("  -x, --ped_exon FILE           Exon length distribution file (default: ../models/exon.len)\n");
     printf("  -n, --ped_intron FILE         Intron length distribution file (default: ../models/intron.len)\n");
+    printf("\nAnalysis parameters:\n");
+    printf("  -f, --flank NUM               Flank size for analysis (default: 99)\n");
     printf("\nOutput control:\n");
     printf("  -p, --print_splice            Print detailed splice site analysis\n");
-    printf("  -S, --sto_viterbi             Use stochastic Viterbi algorithm\n");
-    printf("  -t, --sto_iterations NUM      Number of iterations for stochastic Viterbi (default: 2)\n");
-    printf("  -v, --verbose                 Show progress and debug information\n");
+    printf("  -v, --verbose                 Show debug and progress information\n");
     printf("  -h, --help                    Show this help message\n");
     printf("\nExamples:\n");
     printf("  %s --sequence input.fasta \n", program_name);
-    printf("  %s -s input.fasta --print_splice\n", program_name);
-    printf("  %s -s input.fasta --sto_viterbi --sto_iterations 5\n", program_name);
-    printf("  %s -s input.fasta -S -t 3 --verbose\n", program_name);
+    printf("  %s -s input.fasta --print_splice --flank 150\n", program_name);
+    printf("  %s -s input.fasta --verbose\n", program_name);
 }
 
 int main(int argc, char *argv[])
 {
     // Default paths for model files
-    char *default_don_emission = "../models/don.pwm";
-    char *default_acc_emission = "../models/acc.pwm";
-    char *default_exon_emission = "../models/exon.mm";
-    char *default_intron_emission = "../models/intron.mm";
-    char *default_Ped_exon = "../models/exon.len";
-    char *default_Ped_intron = "../models/intron.len";
+    char *default_don_emission      = "../models/don.pwm";
+    char *default_acc_emission      = "../models/acc.pwm";
+    char *default_exon_emission     = "../models/exon.mm";
+    char *default_intron_emission   = "../models/intron.mm";
+    char *default_Ped_exon          = "../models/exon.len";
+    char *default_Ped_intron        = "../models/intron.len";
 
     // Variables for command-line inputs
-    char *don_emission = default_don_emission;
-    char *acc_emission = default_acc_emission;
-    char *exon_emission = default_exon_emission;
-    char *intron_emission = default_intron_emission;
-    char *Ped_exon = default_Ped_exon;
-    char *Ped_intron = default_Ped_intron;
-    char *seq_input = NULL;
-    int print_splice_detailed = 0;
-    int verbose = 0;
-    int sto_iterations = 2;
-    int use_sto_viterbi = 0;
+    char *don_emission          = default_don_emission;
+    char *acc_emission          = default_acc_emission;
+    char *exon_emission         = default_exon_emission;
+    char *intron_emission       = default_intron_emission;
+    char *Ped_exon              = default_Ped_exon;
+    char *Ped_intron            = default_Ped_intron;
+    char *seq_input             = NULL;
+    int print_splice_detailed   = 0;
+    int flank_size              = DEFAULT_FLANK;  // Use default flank size
 
     // Define long options
     static struct option long_options[] = {
@@ -61,19 +67,23 @@ int main(int argc, char *argv[])
         {"intron_emission", required_argument, 0, 'i'},
         {"ped_exon",        required_argument, 0, 'x'},
         {"ped_intron",      required_argument, 0, 'n'},
+        {"flank",           required_argument, 0, 'f'},
+        {"n_isoforms",      required_argument, 0, 'N'},
+        {"json_output",     required_argument, 0, 'j'},
+        {"restrict_path",   no_argument,       0, 'r'},
         {"print_splice",    no_argument,       0, 'p'},
+        {"random_forest",   no_argument,       0, 'R'},
+        {"n_trees",         required_argument, 0, 'T'},
         {"verbose",         no_argument,       0, 'v'},
-        {"sto_viterbi",     no_argument,       0, 'S'},
-        {"sto_iterations",  required_argument, 0, 't'},
         {"help",            no_argument,       0, 'h'},
         {0, 0, 0, 0}
-    };
+};
 
     int option_index = 0;
     int c;
 
     // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:pvSt:h", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:f:pvh", long_options, &option_index)) != -1) {
         switch (c) {
             case 's':
                 seq_input = optarg;
@@ -96,22 +106,42 @@ int main(int argc, char *argv[])
             case 'n':
                 Ped_intron = optarg;
                 break;
+            case 'f':
+                flank_size = atoi(optarg);
+                if (flank_size < 0) {
+                    fprintf(stderr, "Error: flank size must be non-negative\n");
+                    return 1;
+                }
+                break;
             case 'p':
                 print_splice_detailed = 1;
                 break;
             case 'v':
-                verbose = 1;
+                DEBUG = 1;
                 break;
             case 'h':
                 print_usage(argv[0]);
                 return 0;
-            case 'S':
-                use_sto_viterbi = 1;
+            case 'N':
+                n_isoforms = atoi(optarg);
+                if (n_isoforms < 1) {
+                    fprintf(stderr, "Error: n_isoforms must be at least 1\n");
+                    return 1;
+                }
                 break;
-            case 't':
-                sto_iterations = atoi(optarg);
-                if (sto_iterations < 1) {
-                    fprintf(stderr, "Error: --sto_iterations must be >= 1\n");
+            case 'j':
+                json_output = optarg;
+                break;
+            case 'r':
+                use_path_restriction = 1;
+                break;
+            case 'R':
+                use_random_forest = 1;
+                break;
+            case 'T':
+                n_trees = atoi(optarg);
+                if (n_trees < 1) {
+                    fprintf(stderr, "Error: n_trees must be at least 1\n");
                     return 1;
                 }
                 break;
@@ -131,17 +161,17 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Override DEBUG based on verbose flag if desired
-    int debug_level = verbose ? 1 : 0;
-
     // Initialize data structures
     Observed_events info;
-    Apc apc;
     Lambda l;
     Explicit_duration ed;
     Forward_algorithm fw;
     Backward_algorithm bw;
     Pos_prob pos;
+
+    // Initialize Observed_events with flank size
+    memset(&info, 0, sizeof(Observed_events));
+    info.flank = flank_size;  // Set the flank size from command line
 
     // Initialize Explicit_duration structure properly
     memset(&ed, 0, sizeof(Explicit_duration));
@@ -153,65 +183,74 @@ int main(int argc, char *argv[])
     // Initialize Lambda structure
     memset(&l, 0, sizeof(Lambda));
 
-    if (debug_level >= 1) printf("=== Starting EDHMM Analysis ===\n");
+    if (DEBUG) printf("\n=== Starting EDHMM Analysis ===\n");
 
     // Load input sequence
-    if (debug_level >= 1) printf("Loading sequence from: %s\n", seq_input);
+    if (DEBUG) printf("Loading sequence from: %s\n", seq_input);
     read_sequence_file(seq_input, &info);
     numerical_transcription(&info, info.original_sequence);
 
+    // Validate flank size against sequence length
+    if (info.flank * 2 >= info.T) {
+        fprintf(stderr, "Error: Flank size (%d) is too large for sequence length (%d)\n", 
+                info.flank, info.T);
+        fprintf(stderr, "Flank size should be less than %d\n", info.T / 2);
+        return 1;
+    }
+
     // Load model files
-    if (debug_level >= 1) printf("Loading model files...\n");
-    if (debug_level >= 1) printf("  Donor emission: %s\n", don_emission);
+    if (DEBUG) {
+        printf("\nLoading model files:\n");
+        printf("  Donor emission: %s\n", don_emission);
+    }
     donor_parser(&l, don_emission);
     
-    if (debug_level >= 1) printf("  Acceptor emission: %s\n", acc_emission);
+    if (DEBUG) printf("  Acceptor emission: %s\n", acc_emission);
     acceptor_parser(&l, acc_emission);
     
-    if (debug_level >= 1) printf("  Exon emission: %s\n", exon_emission);
+    if (DEBUG) printf("  Exon emission: %s\n", exon_emission);
     exon_intron_parser(&l, exon_emission, 0);
     
-    if (debug_level >= 1) printf("  Intron emission: %s\n", intron_emission);
+    if (DEBUG) printf("  Intron emission: %s\n", intron_emission);
     exon_intron_parser(&l, intron_emission, 1);
     
     // Load explicit duration probabilities
-    if (debug_level >= 1) printf("  Exon length distribution: %s\n", Ped_exon);
+    if (DEBUG) printf("  Exon length distribution: %s\n", Ped_exon);
     explicit_duration_probability(&ed, Ped_exon, 0);
     
-    if (debug_level >= 1) printf("  Intron length distribution: %s\n", Ped_intron);
+    if (DEBUG) printf("  Intron length distribution: %s\n", Ped_intron);
     explicit_duration_probability(&ed, Ped_intron, 1);
 
-    if (debug_level >= 1)
-    {
-        printf("Explicit duration parameters loaded:\n");
-        printf("  Exon: min=%d, max=%d\n", ed.min_len_exon, ed.max_len_exon);
-        printf("  Intron: min=%d, max=%d\n", ed.min_len_intron, ed.max_len_intron);
-        printf("  Sequence length: %d\n", info.T);
-        printf("  Analysis range: %d to %d\n", FLANK+ed.min_len_exon, info.T-FLANK-ed.min_len_exon);
+    if (DEBUG) {
+        printf("\nParameters loaded:\n");
+        printf("  Sequence length: %d bp\n", info.T);
+        printf("  Flank size: %d bp\n", info.flank);
+        printf("  Exon length range: %d-%d bp\n", ed.min_len_exon, ed.max_len_exon);
+        printf("  Intron length range: %d-%d bp\n", ed.min_len_intron, ed.max_len_intron);
+        printf("  Analysis range: %d to %d\n", info.flank+ed.min_len_exon, info.T-info.flank-ed.min_len_exon);
     }
 
     // Transition matrix
-    if (debug_level >= 1) printf("Start calculating transition probability for donor sites:\n");
+    if (DEBUG) printf("\nCalculating transition probabilities...\n");
     initialize_donor_transition_matrix(&l, &apc, 0);
-    if (debug_level >= 1) printf("\tFinished\n");
-
-    if (debug_level >= 1) printf("Start calculating transition probability for acceptor sites:\n");
+    if (DEBUG) printf("  Donor transitions calculated\n");
+    
     initialize_acceptor_transition_matrix(&l, &apc, 0);
-    if (debug_level >= 1) printf("\tFinished\n");
+    if (DEBUG) printf("  Acceptor transitions calculated\n");
 
-    if (debug_level >= 1) 
-    {
+    if (DEBUG) {
         print_transition_matrices_summary(&l);
         print_duration_summary(&ed);
     }
 
-    // set almost zero value to zero for easier computation
+    // Set almost zero value to zero for easier computation
+    if (DEBUG) printf("\nPreparing data for log-space computation...\n");
     tolerance_checker(ed.exon,   1000,  1e-15);
     tolerance_checker(ed.intron, 1000,  1e-15);
     tolerance_checker(l.A.dons, 1024,   1e-15);
     tolerance_checker(l.A.accs, 4096,   1e-15);
 
-    // sending everything into log space
+    // Sending everything into log space
     log_space_converter(ed.exon, 1000);
     log_space_converter(ed.intron, 1000);
     log_space_converter(l.A.dons, 1024);
@@ -220,85 +259,64 @@ int main(int argc, char *argv[])
     log_space_converter(l.B.intron, 256);
 
     // Allocate memory
+    if (DEBUG) printf("\nAllocating memory for algorithms...\n");
     allocate_fw(&info, &fw, &ed);
     allocate_bw(&bw, &ed, &info);
     allocate_pos(&pos, &info);
 
     // Forward and Backward algorithms
+    if (DEBUG) printf("\nRunning forward-backward algorithm:\n");
     basis_fw_algo(&l, &ed, &fw, &info);
+    if (DEBUG) printf("  Forward basis complete\n");
+    
     fw_algo(&l, &fw, &info, &ed);
+    if (DEBUG) printf("  Forward algorithm complete\n");
+    
     basis_bw_algo(&l, &bw, &info, &ed);
+    if (DEBUG) printf("  Backward basis complete\n");
+    
     bw_algo(&l, &bw, &info, &ed);
+    if (DEBUG) printf("  Backward algorithm complete\n");
 
     // Posterior probability
     pos_prob(&bw, &fw, &info, &pos);
+    if (DEBUG) printf("  Posterior probabilities calculated\n");
 
-    if (use_sto_viterbi) {
-        if (verbose) {
-            printf("\n=== Running Stochastic Viterbi Algorithm ===\n");
-            printf("Initial Iteration: %d\n", sto_iterations);
-        }
-
-        // Initialize the duplicate tracker
-        PrintedTracker tracker;
-        tracker.capacity = 100;
-        tracker.count = 0;
-        tracker.printed_isoforms = malloc(tracker.capacity * sizeof(char*));
-
-        Isoform iso;
-        memset(&iso, 0, sizeof(Isoform));
-
-        int    start_bps    = info.T-FLANK;
-        double init_exon    = fw.basis[0][0];
-        double init_intron  = fw.basis[1][0];
-
-        parse_splice_sites(&pos, &info);
-        
-        if (verbose) {
-            printf("Starting from position: %d\n", start_bps);
-            printf("Found %d donor sites and %d acceptor sites\n\n", pos.dons, pos.accs);
-        }
-        
-        // Call the improved stochastic Viterbi function
-        sto_vit_fixed(&pos, &info, &ed, &iso, &tracker,
-                      0, start_bps, 0, sto_iterations, init_exon, init_intron);
-        
-        // Clean up tracker memory
-        for (int i = 0; i < tracker.count; i++) {
-            free(tracker.printed_isoforms[i]);
-        }
-        free(tracker.printed_isoforms);
-        
-        free_splice_sites(&pos);
-
-        if (verbose) {
-            printf("=== Stochastic Viterbi Complete ===\n");
-            printf("Total unique isoforms found: %d\n", tracker.count);
-        }
+    if (use_random_forest || json_output) {
+    if (DEBUG) printf("\n=== Isoform Generation ===\n");
+    
+    // Allocate structures for Viterbi
+    Vitbi_algo vit;
+    allocate_vit(&vit, &info);    
+    basis_fw_algo(&l, &ed, &fw, &info, &vit);
+    
+    // Parse splice sites for analysis
+    parse_splice_sites(&pos, &info);
+    
+    if (DEBUG) {
+        printf("\n=== Results Summary ===\n");
+        printf("Found %d donor sites and %d acceptor sites\n", pos.dons, pos.accs);
     }
 
     if (print_splice_detailed) {
         print_splice_sites(&pos, &info);
         
-        if (verbose) {
-            printf("=== Additional Debug Info ===\n");
+        if (DEBUG) {
+            printf("\n=== Debug Info ===\n");
             printf("fw.basis[0][0] (exon)  = %.10f\n", fw.basis[0][0]);
             printf("fw.basis[1][0] (intron)= %.10f\n", fw.basis[1][0]);
-        }
-    } else {
-        if (verbose) {
-            printf("Use --print_splice to see detailed splice site analysis\n");
         }
     }
 
     // Cleanup
+    free_splice_sites(&pos);
     free_alpha(&info, &fw);
     free_beta(&info, &bw);
     free_pos(&pos, &info);
     free(info.original_sequence);
     free(info.numerical_sequence);
 
-    if (debug_level >= 1) printf("=== EDHMM Analysis Complete ===\n");
+    if (DEBUG) printf("\n=== EDHMM Analysis Complete ===\n");
 
     return 0;
 }

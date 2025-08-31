@@ -2,52 +2,58 @@
 #define HMM_MODEL
 
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
-#define FLANK 99                        // define the global flank size
-#define DEBUG 3                         // if this is 1, it would print out everything
+#define DEFAULT_FLANK 99                // default flank size if not specified
 
-typedef struct                          // observed events with length T
+extern int DEBUG;
+
+/* --------------- Computation Data Structure --------------- */
+
+typedef struct
 {
-    char *original_sequence;            // where the original sequence store
-    int T;                              // overall length for sequence
-    int *numerical_sequence;            // transcribe from base pair to digits
+    char *original_sequence;            // org seq
+    int T;                              // seq len
+    int *numerical_sequence;            // org seq to num seq
+    int flank;                          // flank size if provided
 } Observed_events;
 
-typedef struct
-{
-    double dons[5][4];                  // the emission probability for donor sites
-    double accs[6][4];                  // the emission probability for acceptor sites
-    double exon[256];                   // the emission probability for exon
-    double intron[256];                 // the emission probability for intron
+typedef struct {
+    double **dons;                      // [dons kmer len][4]
+    double **accs;                      // [accs kmer len][4]
+    double *exon;                       // [exon   kmer len]
+    double *intron;                     // [intron kmer len]
+    int don_kmer_len;                   // dons     k-mer len
+    int acc_kmer_len;                   // accs     k-mer len
+    int exon_kmer_len;                  // exon     k-mer len
+    int intron_kmer_len;                // intron   k-mer len
 } Emission_matrix;
 
-typedef struct                          // degrade the sequence of conventional transition prob from donor 1-5 acceptor 1-6
-{
-    double dons[1024];                  // enumerating exon->intron ; aka donor site series
-    double accs[4096];                  // enumerating intron->exon ; aka acceptor site series                       
+typedef struct {
+    double *dons;                       // [dons_kmer_len]
+    double *accs;                       // [accs_kmer_len]
+    int don_size;                       // size of dons arr
+    int acc_size;                       // size of accs arr
+    // for computing all possible transition prob
+    double *prob;
+    int    *pos;
 } Transition_matrix;
 
-typedef struct 
-{
-    double prob[6];                     // for apc algorithm to calculate transition prob
-    int position[6];                    // for apc algorithm to get index to store in transition matrix
-} Apc;
-
-typedef struct
-{
-    Transition_matrix A;                // the transition probability
-    Emission_matrix B;                  // the pre-defined emission probibility data strcuture
-    double *pi;                         // the initial probability
-    double log_values[1000];            // prepared for log softmax trick
+typedef struct {
+    Transition_matrix A;
+    Emission_matrix B;
+    double *pi;
+    double *log_values;
+    int log_values_len;
 } Lambda;
 
-typedef struct
-{
-    double exon[1000];                  // the ed probability for exon
-    double intron[1000];                // the ed probability for intron
-    int max_len_exon;                   // max len for exon
-    int max_len_intron;                 // max len for intron
-    int min_len_exon;                   // min len for exon
-    int min_len_intron;                 // min len for intron
+typedef struct {
+    double *exon;
+    double *intron;
+    int exon_len;                       // len of exon   arr
+    int intron_len;                     // len of intron arr
+    int max_len_exon;
+    int max_len_intron;
+    int min_len_exon;
+    int min_len_intron;
 } Explicit_duration;
 
 typedef struct
@@ -64,7 +70,6 @@ typedef struct
     int    last_accs;                   // where the first acceptor site appear
 } Backward_algorithm;                   
 
-// for HMM hints
 typedef struct {
     double **xi;
     double *dons_val;
@@ -76,34 +81,30 @@ typedef struct {
 } Pos_prob;
 
 typedef struct {
-    char **printed_isoforms;
-    int capacity;
-    int count;
-} PrintedTracker;
+    double **v;                         // for dp of viterbi
+    double exon;
+    double intron;
+} Vitbi_algo;
 
-// for sto vit output
-typedef struct {
-    int     *bps_array;
-    double  *doa_array;
-    int     count;
-} Vit_result;
+/* --------------- Isoform Data Structure --------------- */
 
 typedef struct {
-    double max_val, sec_val;
-    int    max_bps, sec_bps;
-} Top2Result;
-
-typedef struct {
-    int     bps_position[200];
-    double  scores[200];
-    int     count;
+    int beg;                // isoform begin position
+    int end;                // isoform end position
+    int *dons;              // donor site positions
+    int *accs;              // acceptor site positions
+    int n_introns;          // number of introns
 } Isoform;
 
+typedef struct {
+    Isoform **isoforms;     // array of isoform pointers
+    int n_isoforms;         // number of isoforms
+    int capacity;           // capacity for isoforms array
+} Locus;
 
+/* ---------- Function Declarations ---------- */
 
-/* ======================= Function Declarations ======================= */
-
-/* ===== Sequence reading ===== */
+/* ----- Sequence reading ----- */
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
 
@@ -118,8 +119,7 @@ int    power(int base, int exp);
 int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
-double log_add_exp(double a, double b);
-double log_sub_exp(double a, double b);
+double log_sum_sub(double val, double add, double sub);
 void   tolerance_checker(double *array, int len, const double epsilon);
 void   log_space_converter(double *array, int len);
 
@@ -129,7 +129,7 @@ void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
 
 /* ===== Forward algorithm ===== */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
-void basis_fw_algo(Lambda *l, Explicit_duration *ed, Forward_algorithm *alpha, Observed_events *info);
+void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info, Vitbi_algo *vit);
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha);
 
@@ -150,22 +150,12 @@ void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info);
 void print_duration_summary(Explicit_duration *ed);
 
-/* ===== Stochiastic Viterbi ===== */
+/* ----- Splice site parsing ----- */
 void parse_splice_sites(Pos_prob *pos, Observed_events *info);
 void free_splice_sites(Pos_prob *pos);
-Vit_result n_nearest_neightbour(    Pos_prob *pos, Explicit_duration *ed,
-                                    int init_bps, int state, int iteration);
-void free_vit_results(Vit_result *results);
-Top2Result find_top2(double *vals, int *pos, int count);
-char* isoform_to_string(Isoform *iso);
-int is_already_printed(PrintedTracker *tracker, char *iso_str);
-void add_to_printed(PrintedTracker *tracker, char *iso_str);
-void print_isoform_fixed(Isoform *iso, Observed_events *info, PrintedTracker *tracker);
-void sto_vit_fixed(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
-                   Isoform *iso, PrintedTracker *tracker,
-                   int state, int bps, int depth, int iteration,
-                   double exon, double intron);
-void run_stochastic_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed);
 
+/* ----- Vitbi Algo ----- */
+void allocate_vit(Vitbi_algo *vit, Observed_events *info);
+void free_vit(Vitbi_algo *vit, Observed_events *info);
 
 #endif

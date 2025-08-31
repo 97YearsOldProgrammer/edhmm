@@ -4,19 +4,57 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ==================================================== *
- * =============== HMM Hints_output =================== *
- * ==================================================== */
+/* --------------- Locus Class --------------- */
 
-void print_splice_sites(Pos_prob *pos, Observed_events *info)
-{
+Locus* create_locus(int initial_capacity) {
+    Locus *loc = malloc(sizeof(Locus));
+    loc->capacity = initial_capacity;
+    loc->n_isoforms = 0;
+    loc->isoforms = malloc(loc->capacity * sizeof(Isoform*));
+    for (int i = 0; i < loc->capacity; i++) {
+        loc->isoforms[i] = NULL;
+    }
+    return loc;
+}
+
+Isoform* create_isoform(int beg, int end) {
+    Isoform *iso = malloc(sizeof(Isoform));
+    iso->beg = beg;
+    iso->end = end;
+    iso->dons = NULL;
+    iso->accs = NULL;
+    iso->n_introns = 0;
+    return iso;
+}
+
+void free_isoform(Isoform *iso) {
+    if (iso) {
+        if (iso->dons) free(iso->dons);
+        if (iso->accs) free(iso->accs);
+        free(iso);
+    }
+}
+
+void free_locus(Locus *loc) {
+    if (loc) {
+        for (int i = 0; i < loc->n_isoforms; i++) {
+            free_isoform(loc->isoforms[i]);
+        }
+        free(loc->isoforms);
+        free(loc);
+    }
+}
+
+/* --------------- HMM Hints Output --------------- */
+
+void print_splice_sites(Pos_prob *pos, Observed_events *info) {
+    int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
     printf("DONS\n");
     for (int i = FLANK; i < info->T-FLANK; i++) {
         if (pos->xi[i][0] != 0.0) {
             printf("%d\t%.10f\n", i, pos->xi[i][0]);
         }
     }
-    
     printf("ACCS\n");
     for (int i = FLANK; i < info->T-FLANK; i++) {
         if (pos->xi[i][1] != 0.0) {  
@@ -25,12 +63,50 @@ void print_splice_sites(Pos_prob *pos, Observed_events *info)
     }
 }
 
-/* ==================================================== *
- * ============== Parser Debug Output ================= *
- * ==================================================== */
+/* --------------- Json Output --------------- */
 
-void index_to_sequence(int index, int length, char *seq)
-{
+void print_locus_json(FILE *fp, Locus *loc, Observed_events *info) {
+    int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
+    
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"flank\": %d,\n", FLANK);
+    fprintf(fp, "  \"seq_length\": %d,\n", info->T);
+    fprintf(fp, "  \"n_isoforms\": %d,\n", loc->n_isoforms);
+    fprintf(fp, "  \"isoforms\": [\n");
+    
+    for (int i = 0; i < loc->n_isoforms; i++) {
+        Isoform *iso = loc->isoforms[i];
+        fprintf(fp, "    {\n");
+        fprintf(fp, "      \"id\": %d,\n", i);
+        fprintf(fp, "      \"beg\": %d,\n", iso->beg);
+        fprintf(fp, "      \"end\": %d,\n", iso->end);
+        fprintf(fp, "      \"dons\": [");
+        
+        for (int j = 0; j < iso->n_introns; j++) {
+            fprintf(fp, "%d", iso->dons[j]);
+            if (j < iso->n_introns - 1) fprintf(fp, ", ");
+        }
+        fprintf(fp, "],\n");
+        
+        fprintf(fp, "      \"accs\": [");
+        for (int j = 0; j < iso->n_introns; j++) {
+            fprintf(fp, "%d", iso->accs[j]);
+            if (j < iso->n_introns - 1) fprintf(fp, ", ");
+        }
+        fprintf(fp, "]\n");
+        
+        fprintf(fp, "    }");
+        if (i < loc->n_isoforms - 1) fprintf(fp, ",");
+        fprintf(fp, "\n");
+    }
+    
+    fprintf(fp, "  ]\n");
+    fprintf(fp, "}\n");
+}
+
+/* --------------- Debug Output --------------- */
+
+void index_to_sequence(int index, int length, char *seq) {
     for(int i = length-1; i >= 0; i--) {
         int base = index % 4;
         switch(base) {
@@ -44,8 +120,7 @@ void index_to_sequence(int index, int length, char *seq)
     seq[length] = '\0';
 }
 
-void print_transition_matrices_summary(Lambda *l)
-{
+void print_transition_matrices_summary(Lambda *l) {
     printf("\n=== TRANSITION MATRIX SUMMARY ===\n");
     
     // Donor summary
@@ -99,8 +174,7 @@ void print_transition_matrices_summary(Lambda *l)
     printf("================================\n\n");
 }
 
-void print_duration_summary(Explicit_duration *ed)
-{
+void print_duration_summary(Explicit_duration *ed) {
     printf("\n=== EXPLICIT DURATION SUMMARY ===\n");
     
     // Exon analysis
