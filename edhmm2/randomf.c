@@ -1,3 +1,6 @@
+#include "stdio.h"
+#include "stdlib.h"
+
 #include "randomf.h"
 #include "model.h"
 
@@ -40,6 +43,118 @@ SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
         sample[i] = sites[rand() % n_sites];
     }
     return sample;
+}
+
+/* --------------- Splitting Criteria --------------- */
+
+double compute_mse(SpliceSite *sites, int n_sites) {
+    if (n_sites == 0) return 0.0;
+    
+    double mean = 0.0;
+    for (int i = 0; i < n_sites; i++) {
+        mean += sites[i].val;
+    }
+    mean /= n_sites;
+    
+    double mse = 0.0;
+    for (int i = 0; i < n_sites; i++) {
+        double diff = sites[i].val - mean;
+        mse += diff * diff;
+    }
+    return mse / n_sites;
+}
+
+double compute_gini(SpliceSite *sites, int n_sites) {
+    if (n_sites == 0) return 0.0;
+    
+    int donors = 0, acceptors = 0;
+    for (int i = 0; i < n_sites; i++) {
+        if (sites[i].typ == 0) donors++;
+        else acceptors++;
+    }
+    
+    double p_donor      = (double)donors / n_sites;
+    double p_acceptor   = (double)acceptors / n_sites;
+    
+    return 1.0 - (p_donor * p_donor + p_acceptor * p_acceptor);
+}
+
+int compare_sites_by_val(const void *a, const void *b) {
+    SpliceSite *sa = (SpliceSite*)a;
+    SpliceSite *sb = (SpliceSite*)b;
+    if (sa->val < sb->val)      return -1;
+    else if (sa->val > sb->val) return 1;
+    else return 0;
+}
+
+int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
+                    int min_samples, double gini_threshold) {
+
+    // default mtry = 1/3
+    int subset_size = n_sites / 3;
+    if (subset_size < 2) subset_size = 2;
+    
+    SpliceSite *subset = malloc(subset_size * sizeof(SpliceSite));
+    for (int i = 0; i < subset_size; i++) {
+        subset[i] = sites[rand() % n_sites];
+    }
+    
+    qsort(subset, subset_size, sizeof(SpliceSite), compare_sites_by_val);
+    
+    double parent_mse   = compute_mse(subset, subset_size);
+    double max_gain     = -1.0;
+    *best_threshold     = 0.0;
+    int found_split     = 0;
+    
+    for (int i = 1; i < subset_size; i++) {
+        double threshold = subset[i].val;
+        
+        // Split the full dataset using this threshold
+        int left_count = 0, right_count = 0;
+        for (int j = 0; j < n_sites; j++) {
+            if (sites[j].val < threshold) left_count++;
+            else right_count++;
+        }
+        
+        // Check minimum samples constraint
+        if (left_count < min_samples || right_count < min_samples) continue;
+        
+        // Calculate MSE gain for subset
+        double left_mse     = compute_mse(subset, i);
+        double right_mse    = compute_mse(&subset[i], subset_size - i);
+        double gain         = parent_mse - left_mse - right_mse;
+        
+        // Check gini impurity
+        SpliceSite *temp_left   = malloc(left_count * sizeof(SpliceSite));
+        SpliceSite *temp_right  = malloc(right_count * sizeof(SpliceSite));
+        
+        int l_idx = 0, r_idx = 0;
+        for (int j = 0; j < n_sites; j++) {
+            if (sites[j].val < threshold) {
+                temp_left[l_idx++] = sites[j];
+            } else {
+                temp_right[r_idx++] = sites[j];
+            }
+        }
+        
+        double left_gini    = compute_gini(temp_left, left_count);
+        double right_gini   = compute_gini(temp_right, right_count);
+        
+        free(temp_left);
+        free(temp_right);
+        
+        // Skip if Gini is too low (too pure)
+        if (left_gini < gini_threshold || right_gini < gini_threshold) continue;
+        
+        if (gain > max_gain) {
+            max_gain = gain;
+            *best_threshold = threshold;
+            found_split = 1;
+        }
+    }
+    
+    free(subset);
+    return found_split;
 }
 
 /* --------------- Viterbi on Subset --------------- */
@@ -179,11 +294,9 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
 void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Explicit_duration *ed, Lambda *l, 
                                      Locus *loc, Vitbi_algo *vit,
-                                     int n_trees, int use_path_restriction) {
+                                     int use_path_restriction) {
     
-    for (int tree = 0; tree < n_trees; tree++) {
-        if (DEBUG) printf("Building tree %d/%d\n", tree + 1, n_trees);
-        
+    while (loc->n_isoforms < loc->capacity) {        
         // bootstrap
         SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->n_sites);
         
@@ -225,3 +338,4 @@ int isoform_exists(Locus *loc, Isoform *new_iso) {
 void free_random_forest(RandomForest *rf) {
     free(rf->all_sites);
     free(rf);
+}

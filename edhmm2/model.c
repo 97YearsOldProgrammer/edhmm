@@ -93,7 +93,7 @@ void log_space_converter(double *array, int len) {
 
 /* --------------- Forward Algorithm --------------- */
 
-void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info, Vitbi_algo *vit) {
+void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info) {
     int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
     int dkmer = l->B.don_kmer_len;
     int akmer = l->B.acc_kmer_len;
@@ -572,7 +572,7 @@ void allocate_pos(Pos_prob *pos, Observed_events *info){
 }
 
 void free_alpha(Observed_events *info, Forward_algorithm *alpha) {
-    if(DEBUG)  tf("Clearing up forward algorithm memory:\n");
+    if(DEBUG)  printf("Clearing up forward algorithm memory:\n");
 
     int size_array = info->T;
     for (int i = 0; i < size_array; i++) 
@@ -583,11 +583,11 @@ void free_alpha(Observed_events *info, Forward_algorithm *alpha) {
     free(alpha->basis[1]);
     free(alpha->basis);
 
-    if(DEBUG)  tf("\tFinished\n");
+    if(DEBUG)  printf("\tFinished\n");
 }
 
 void free_beta(Observed_events *info, Backward_algorithm *beta) {
-    if(DEBUG)  tf("Clearing up backward algorithm memory:\n");
+    if(DEBUG)  printf("Clearing up backward algorithm memory:\n");
 
     int size_array = info->T;
     for (int i = 0; i < size_array; i++)
@@ -598,7 +598,7 @@ void free_beta(Observed_events *info, Backward_algorithm *beta) {
     free(beta->basis[1]);
     free(beta->basis);
 
-    if(DEBUG)  tf("\tFinished\n");
+    if(DEBUG)  printf("\tFinished\n");
 }
 
 void free_pos(Pos_prob *pos, Observed_events *info) {

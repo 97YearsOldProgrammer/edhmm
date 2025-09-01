@@ -4,7 +4,12 @@
 #define HS 2                            // 1 (exon) + 1 (intron) ; 5 (donor site) + 6(acceptor site) degraded
 #define DEFAULT_FLANK 99                // default flank size if not specified
 
-extern int DEBUG;
+extern int  DEBUG;
+extern int  use_random_forest;
+extern int  n_isoforms;
+extern int  n_trees;
+extern char *json_output;
+extern int  use_path_restriction;
 
 /* --------------- Computation Data Structure --------------- */
 
@@ -102,19 +107,21 @@ typedef struct {
     int capacity;           // capacity for isoforms array
 } Locus;
 
-/* ---------- Function Declarations ---------- */
+/* ---------------------------------------------------- */
+/* --------------- Function Declaration --------------- */
+/* ---------------------------------------------------- */
 
-/* ----- Sequence reading ----- */
+/* --------------- Input Parser --------------- */
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
-
-/* ===== Model input parsers ===== */
 void donor_parser(Lambda *l, char *filename);
 void acceptor_parser(Lambda *l, char *filename);
 void exon_intron_parser(Lambda *l, char *filename, int digit);
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit);
+void initialize_donor_transition_matrix(Lambda *l, int depth);
+void initialize_acceptor_transition_matrix(Lambda *l, int depth);
 
-/* ===== Computation utilities ===== */
+/* --------------- Computation Functions --------------- */
 int    power(int base, int exp);
 int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
@@ -123,39 +130,45 @@ double log_sum_sub(double val, double add, double sub);
 void   tolerance_checker(double *array, int len, const double epsilon);
 void   log_space_converter(double *array, int len);
 
-/* ===== Transition matrix initialization ===== */
-void initialize_donor_transition_matrix(Lambda *l, Apc *a, int depth);
-void initialize_acceptor_transition_matrix(Lambda *l, Apc *a, int depth);
-
-/* ===== Forward algorithm ===== */
+/* --------------- Forward Algorithm --------------- */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
-void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info, Vitbi_algo *vit);
+void basis_fw_algo(Lambda *l, Explicit_duration *ed,  Forward_algorithm *alpha, Observed_events *info);
 void fw_algo(Lambda *l, Forward_algorithm *alpha, Observed_events *info, Explicit_duration *ed);
 void free_alpha(Observed_events *info, Forward_algorithm *alpha);
 
-/* ===== Backward algorithm ===== */
+/* --------------- Backward Algorithm --------------- */
 void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_events *info);
 void basis_bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed);
 void bw_algo(Lambda *l, Backward_algorithm *beta, Observed_events *info, Explicit_duration *ed);
 void free_beta(Observed_events *info, Backward_algorithm *beta);
 
-/* ===== Posterior probabilities ===== */
+/* --------------- Posterior Probability --------------- */
 void allocate_pos(Pos_prob *pos, Observed_events *info);
 void free_pos(Pos_prob *pos, Observed_events *info);
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos);
 
-/* ===== Output ===== */
+/* --------------- Output --------------- */
 void index_to_sequence(int index, int length, char *seq);
 void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info);
 void print_duration_summary(Explicit_duration *ed);
-
-/* ----- Splice site parsing ----- */
+void print_locus(Locus *loc, Observed_events *info);
 void parse_splice_sites(Pos_prob *pos, Observed_events *info);
 void free_splice_sites(Pos_prob *pos);
 
-/* ----- Vitbi Algo ----- */
+/* --------------- Viterbi Algorithm --------------- */
 void allocate_vit(Vitbi_algo *vit, Observed_events *info);
 void free_vit(Vitbi_algo *vit, Observed_events *info);
+void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                        Vitbi_algo *vit, Lambda *l, Locus *loc);
+void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                             Vitbi_algo *vit, Lambda *l, Locus *loc);
+void extract_isoform_from_path(int *path, Observed_events *info, int flank, Isoform *iso);
+
+/* --------------- Locus Class --------------- */
+Locus* create_locus(int initial_capacity);
+Isoform* create_isoform(int beg, int end);
+void free_isoform(Isoform *iso);
+void free_locus(Locus *loc);
 
 #endif

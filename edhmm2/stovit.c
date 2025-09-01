@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* --------------- Auxilary Function --------------- */
+
 double log_sum_sub(double val, double add, double sub) {
     double max          = (val > add) ? val : add;    
     double sum          = exp(val - max) + exp(add - max);

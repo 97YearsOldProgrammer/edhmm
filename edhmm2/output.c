@@ -65,43 +65,36 @@ void print_splice_sites(Pos_prob *pos, Observed_events *info) {
 
 /* --------------- Json Output --------------- */
 
-void print_locus_json(FILE *fp, Locus *loc, Observed_events *info) {
+void print_locus(Locus *loc, Observed_events *info) {
     int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
     
-    fprintf(fp, "{\n");
-    fprintf(fp, "  \"flank\": %d,\n", FLANK);
-    fprintf(fp, "  \"seq_length\": %d,\n", info->T);
-    fprintf(fp, "  \"n_isoforms\": %d,\n", loc->n_isoforms);
-    fprintf(fp, "  \"isoforms\": [\n");
+    printf("Flank: %d\n", FLANK);
+    printf("Sequence length: %d\n", info->T);
+    printf("Number of isoforms: %d\n", loc->n_isoforms);
+    printf("Isoforms:\n");
     
     for (int i = 0; i < loc->n_isoforms; i++) {
         Isoform *iso = loc->isoforms[i];
-        fprintf(fp, "    {\n");
-        fprintf(fp, "      \"id\": %d,\n", i);
-        fprintf(fp, "      \"beg\": %d,\n", iso->beg);
-        fprintf(fp, "      \"end\": %d,\n", iso->end);
-        fprintf(fp, "      \"dons\": [");
+        printf("  Isoform %d:\n", i);
+        printf("    Begin: %d\n", iso->beg);
+        printf("    End: %d\n", iso->end);
         
+        printf("    Donors: [");
         for (int j = 0; j < iso->n_introns; j++) {
-            fprintf(fp, "%d", iso->dons[j]);
-            if (j < iso->n_introns - 1) fprintf(fp, ", ");
+            printf("%d", iso->dons[j]);
+            if (j < iso->n_introns - 1) printf(", ");
         }
-        fprintf(fp, "],\n");
+        printf("]\n");
         
-        fprintf(fp, "      \"accs\": [");
+        printf("    Acceptors: [");
         for (int j = 0; j < iso->n_introns; j++) {
-            fprintf(fp, "%d", iso->accs[j]);
-            if (j < iso->n_introns - 1) fprintf(fp, ", ");
+            printf("%d", iso->accs[j]);
+            if (j < iso->n_introns - 1) printf(", ");
         }
-        fprintf(fp, "]\n");
+        printf("]\n");
         
-        fprintf(fp, "    }");
-        if (i < loc->n_isoforms - 1) fprintf(fp, ",");
-        fprintf(fp, "\n");
+        if (i < loc->n_isoforms - 1) printf("\n");
     }
-    
-    fprintf(fp, "  ]\n");
-    fprintf(fp, "}\n");
 }
 
 /* --------------- Debug Output --------------- */

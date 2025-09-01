@@ -2,15 +2,15 @@ CC = gcc
 CFLAGS = -fsanitize=address -g
 #CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
 
-OBJS = main.o parser.o model.o output.o stovit.o
+OBJS = main.o parser.o model.o output.o stovit.o randomf.o
 
-all: edhmm2
+all: rfhmm
 
-edhmm2: $(OBJS)
-	$(CC) $(CFLAGS) -o edhmm2 $(OBJS) -lm
-	@chmod +x edhmm2
+rfhmm: $(OBJS)
+	$(CC) $(CFLAGS) -o rfhmm $(OBJS) -lm
+	@chmod +x rfhmm
 
-main.o: main.c parser.c model.c model.h output.c
+main.o: main.c parser.c model.c model.h output.c randomf.h
 	@echo "Compiling main"
 	$(CC) $(CFLAGS) -c main.c
 
@@ -30,16 +30,20 @@ stovit.o: stovit.c model.h
 	@echo "Compiling stochastic Viterbi"
 	$(CC) $(CFLAGS) -c stovit.c
 
+randomf.o: randomf.c randomf.h model.h
+	@echo "Compiling random forest module"
+	$(CC) $(CFLAGS) -c randomf.c
+
 clean:
 	@echo "Removing everything but the source file"
-	rm -f edhmm2 *.o
+	rm -f rfhmm *.o *.json
 
-debug: edhmm2
-	lldb ./edhmm2 --sequence seq --verbose
+debug: rfhmm
+	lldb ./rfhmm --sequence seq --verbose
 
-test: edhmm2
+test: rfhmm
 	@echo "Running test with debug information (verbose mode)"
-	./edhmm2 --sequence seq \
+	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
 		--exon_emission ../models/exon.mm \
@@ -48,8 +52,8 @@ test: edhmm2
 		--ped_intron ../models/intron.len \
 		--verbose
 
-hint: edhmm2
-	./edhmm2 --sequence seq \
+hint: rfhmm
+	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
 		--exon_emission ../models/exon.mm \
@@ -58,52 +62,70 @@ hint: edhmm2
 		--ped_intron ../models/intron.len \
 		--print_splice
 
-sto: edhmm2
-	@echo "Running stochastic Viterbi with default iterations (2)"
-	./edhmm2 --sequence seq \
+# Random Forest Viterbi tests
+rf: rfhmm
+	@echo "Running Random Forest isoform generation (runs until capacity reached)"
+	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
 		--exon_emission ../models/exon.mm \
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
-		--sto_viterbi
+		--stovit \
+		--json_output isoforms.json
 
-sto-verbose: edhmm2
-	@echo "Running stochastic Viterbi with verbose output"
-	./edhmm2 --sequence seq \
+rf-verbose: rfhmm
+	@echo "Running Random Forest with verbose output"
+	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
 		--exon_emission ../models/exon.mm \
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
-		--sto_viterbi --verbose
+		--stovit --verbose \
+		--json_output isoforms_verbose.json
 
-sto-custom: edhmm2
-	@echo "Running stochastic Viterbi with custom iterations (5)"
-	./edhmm2 --sequence seq \
+rf-custom: rfhmm
+	@echo "Running Random Forest with custom capacity (1000 isoforms)"
+	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
 		--exon_emission ../models/exon.mm \
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
-		--sto_viterbi --sto_iterations 5
+		--stovit \
+		--n_isoforms 100 \
+		--json_output isoforms_custom.json
 
-sto-short: edhmm2
-	@echo "Running stochastic Viterbi (short flags)"
-	./edhmm2 -s seq -S -t 3
+rf-restrict: rfhmm
+	@echo "Running Random Forest with path restriction"
+	./rfhmm --sequence seq \
+		--don_emission ../models/don.pwm \
+		--acc_emission ../models/acc.pwm \
+		--exon_emission ../models/exon.mm \
+		--intron_emission ../models/intron.mm \
+		--ped_exon ../models/exon.len \
+		--ped_intron ../models/intron.len \
+		--stovit \
+		--restrict_path \
+		--json_output isoforms_restricted.json
 
-test-short: edhmm2
+rf-short: rfhmm
+	@echo "Running Random Forest (short flags)"
+	./rfhmm -s seq -S -N 500 -j isoforms_short.json
+
+test-short: rfhmm
 	@echo "Running test (short flags)"
-	./edhmm2 -s seq -v
+	./rfhmm -s seq -v
 
-hint-short: edhmm2
+hint-short: rfhmm
 	@echo "Running hint (short flags)"
-	./edhmm2 -s seq -p
+	./rfhmm -s seq -p
 
-help: edhmm2
-	./edhmm2 --help
+help: rfhmm
+	./rfhmm --help
 
-.PHONY: all clean debug test hint sto sto-verbose sto-custom sto-short test-short hint-short help
+.PHONY: all clean debug test hint rf rf-verbose rf-custom rf-restrict rf-short test-short hint-short help

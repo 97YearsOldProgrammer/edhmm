@@ -6,15 +6,13 @@
 #include "model.h"
 #include "randomf.h"
 
-int     DEBUG               = 0;
-int     use_random_forest   = 0;
-int     n_isoforms          = 10000;
-int     n_trees             = 100;
-char    *json_output        = NULL;
-int use_path_restriction    = 0;
+int     DEBUG                   = 0;
+int     use_random_forest       = 0;
+int     n_isoforms              = 10000;
+int     use_path_restriction    = 0;
 
 void print_usage(const char *program_name) {
-    printf("EDHMM - Explicit Duration Hidden Markov Model for gene prediction\n");
+    printf("RFHMM - Random Forest Hidden Markov Model for gene prediction\n");
     printf("Usage: %s [OPTIONS]\n\n", program_name);
     printf("Required options:\n");
     printf("  -s, --sequence FILE           Input sequence file\n");
@@ -27,14 +25,24 @@ void print_usage(const char *program_name) {
     printf("  -n, --ped_intron FILE         Intron length distribution file (default: ../models/intron.len)\n");
     printf("\nAnalysis parameters:\n");
     printf("  -f, --flank NUM               Flank size for analysis (default: 99)\n");
+    printf("\nRandom Forest options:\n");
+    printf("  -S, --stovit                  Enable stochastic Viterbi with Random Forest\n");
+    printf("  -N, --n_isoforms NUM          Maximum isoform capacity (default: 10000)\n");
+    printf("  -r, --restrict_path           Use path restriction in Viterbi\n");
     printf("\nOutput control:\n");
     printf("  -p, --print_splice            Print detailed splice site analysis\n");
     printf("  -v, --verbose                 Show debug and progress information\n");
     printf("  -h, --help                    Show this help message\n");
     printf("\nExamples:\n");
     printf("  %s --sequence input.fasta \n", program_name);
+    printf("  %s -s input.fasta --stovit\n", program_name);
+    printf("  %s -s input.fasta --stovit --n_isoforms 5000\n", program_name);
     printf("  %s -s input.fasta --print_splice --flank 150\n", program_name);
     printf("  %s -s input.fasta --verbose\n", program_name);
+    printf("\nRandom Forest Algorithm:\n");
+    printf("  The algorithm generates trees continuously until the locus capacity\n");
+    printf("  is reached. It automatically finds unique isoforms without needing\n");
+    printf("  to specify target counts or tree limits.\n");
 }
 
 int main(int argc, char *argv[])
@@ -56,9 +64,8 @@ int main(int argc, char *argv[])
     char *Ped_intron            = default_Ped_intron;
     char *seq_input             = NULL;
     int print_splice_detailed   = 0;
-    int flank_size              = DEFAULT_FLANK;  // Use default flank size
+    int flank_size              = DEFAULT_FLANK;
 
-    // Define long options
     static struct option long_options[] = {
         {"sequence",        required_argument, 0, 's'},
         {"don_emission",    required_argument, 0, 'd'},
@@ -69,21 +76,18 @@ int main(int argc, char *argv[])
         {"ped_intron",      required_argument, 0, 'n'},
         {"flank",           required_argument, 0, 'f'},
         {"n_isoforms",      required_argument, 0, 'N'},
-        {"json_output",     required_argument, 0, 'j'},
         {"restrict_path",   no_argument,       0, 'r'},
         {"print_splice",    no_argument,       0, 'p'},
-        {"random_forest",   no_argument,       0, 'R'},
-        {"n_trees",         required_argument, 0, 'T'},
+        {"stovit",          no_argument,       0, 'S'},
         {"verbose",         no_argument,       0, 'v'},
         {"help",            no_argument,       0, 'h'},
         {0, 0, 0, 0}
-};
+    };
 
     int option_index = 0;
     int c;
 
-    // Parse command line arguments
-    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:f:pvh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:f:N:j:rSpvh", long_options, &option_index)) != -1) {
         switch (c) {
             case 's':
                 seq_input = optarg;
@@ -129,21 +133,11 @@ int main(int argc, char *argv[])
                     return 1;
                 }
                 break;
-            case 'j':
-                json_output = optarg;
-                break;
             case 'r':
                 use_path_restriction = 1;
                 break;
-            case 'R':
+            case 'S':
                 use_random_forest = 1;
-                break;
-            case 'T':
-                n_trees = atoi(optarg);
-                if (n_trees < 1) {
-                    fprintf(stderr, "Error: n_trees must be at least 1\n");
-                    return 1;
-                }
                 break;
             case '?':
                 // getopt_long already printed an error message
@@ -154,11 +148,15 @@ int main(int argc, char *argv[])
         }
     }
 
-    // Check required arguments
     if (seq_input == NULL) {
         fprintf(stderr, "Error: --sequence is required\n");
         print_usage(argv[0]);
         return 1;
+    }
+
+    if (use_random_forest && json_output == NULL) {
+        json_output = "isoforms.json";
+        if (DEBUG) printf("Using default JSON output file: %s\n", json_output);
     }
 
     // Initialize data structures
@@ -171,7 +169,7 @@ int main(int argc, char *argv[])
 
     // Initialize Observed_events with flank size
     memset(&info, 0, sizeof(Observed_events));
-    info.flank = flank_size;  // Set the flank size from command line
+    info.flank = flank_size;
 
     // Initialize Explicit_duration structure properly
     memset(&ed, 0, sizeof(Explicit_duration));
@@ -183,7 +181,7 @@ int main(int argc, char *argv[])
     // Initialize Lambda structure
     memset(&l, 0, sizeof(Lambda));
 
-    if (DEBUG) printf("\n=== Starting EDHMM Analysis ===\n");
+    if (DEBUG) printf("\n=== Starting RFHMM Analysis ===\n");
 
     // Load input sequence
     if (DEBUG) printf("Loading sequence from: %s\n", seq_input);
@@ -198,7 +196,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Load model files
+    // Load model files - parsing phase first
     if (DEBUG) {
         printf("\nLoading model files:\n");
         printf("  Donor emission: %s\n", don_emission);
@@ -230,33 +228,37 @@ int main(int argc, char *argv[])
         printf("  Analysis range: %d to %d\n", info.flank+ed.min_len_exon, info.T-info.flank-ed.min_len_exon);
     }
 
-    // Transition matrix
-    if (DEBUG) printf("\nCalculating transition probabilities...\n");
-    initialize_donor_transition_matrix(&l, &apc, 0);
-    if (DEBUG) printf("  Donor transitions calculated\n");
-    
-    initialize_acceptor_transition_matrix(&l, &apc, 0);
-    if (DEBUG) printf("  Acceptor transitions calculated\n");
+    // allocate arr for log val summation
+    l.log_values_len    = (ed.max_len_exon > ed.max_len_intron) ? ed.max_len_exon : ed.max_len_intron;
+    l.log_values        = calloc(l.log_values_len, sizeof(double));
 
     if (DEBUG) {
         print_transition_matrices_summary(&l);
         print_duration_summary(&ed);
     }
 
-    // Set almost zero value to zero for easier computation
     if (DEBUG) printf("\nPreparing data for log-space computation...\n");
-    tolerance_checker(ed.exon,   1000,  1e-15);
-    tolerance_checker(ed.intron, 1000,  1e-15);
-    tolerance_checker(l.A.dons, 1024,   1e-15);
-    tolerance_checker(l.A.accs, 4096,   1e-15);
+    
+    int don_size    = power(4, l.B.don_kmer_len);      // Should be 1024 for kmer=5
+    int acc_size    = power(4, l.B.acc_kmer_len);      // Should be 4096 for kmer=6
+    int exon_size   = power(4, l.B.exon_kmer_len);    // Should be 256 for kmer=4
+    int intron_size = power(4, l.B.intron_kmer_len); // Should be 256 for kmer=4
+    
+    // check parser
+    tolerance_checker(ed.exon, ed.exon_len, 1e-15);
+    tolerance_checker(ed.intron, ed.intron_len, 1e-15);
+    tolerance_checker(l.A.dons, don_size, 1e-15);
+    tolerance_checker(l.A.accs, acc_size, 1e-15);
 
-    // Sending everything into log space
-    log_space_converter(ed.exon, 1000);
-    log_space_converter(ed.intron, 1000);
-    log_space_converter(l.A.dons, 1024);
-    log_space_converter(l.A.accs, 4096);
-    log_space_converter(l.B.exon, 256);
-    log_space_converter(l.B.intron, 256);
+    // Send into log space
+    log_space_converter(ed.exon, ed.exon_len);
+    log_space_converter(ed.intron, ed.intron_len);
+    log_space_converter(l.A.dons, don_size);
+    log_space_converter(l.A.accs, acc_size);
+    log_space_converter(l.B.exon, exon_size);
+    log_space_converter(l.B.intron, intron_size);
+
+    /* --------------- Computation --------------- */
 
     // Allocate memory
     if (DEBUG) printf("\nAllocating memory for algorithms...\n");
@@ -264,38 +266,58 @@ int main(int argc, char *argv[])
     allocate_bw(&bw, &ed, &info);
     allocate_pos(&pos, &info);
 
-    // Forward and Backward algorithms
-    if (DEBUG) printf("\nRunning forward-backward algorithm:\n");
+    // Allocate Viterbi if using random forest
+    Vitbi_algo vit;
+    if (use_random_forest) {
+        allocate_vit(&vit, &info);
+    }
+
+    // fw algo
+    if (DEBUG) printf("\nRunning forward-backward algorithm:\n");    
     basis_fw_algo(&l, &ed, &fw, &info);
     if (DEBUG) printf("  Forward basis complete\n");
-    
     fw_algo(&l, &fw, &info, &ed);
     if (DEBUG) printf("  Forward algorithm complete\n");
-    
+    // bw algo
     basis_bw_algo(&l, &bw, &info, &ed);
     if (DEBUG) printf("  Backward basis complete\n");
-    
     bw_algo(&l, &bw, &info, &ed);
     if (DEBUG) printf("  Backward algorithm complete\n");
-
     // Posterior probability
     pos_prob(&bw, &fw, &info, &pos);
     if (DEBUG) printf("  Posterior probabilities calculated\n");
-
-    if (use_random_forest || json_output) {
-    if (DEBUG) printf("\n=== Isoform Generation ===\n");
-    
-    // Allocate structures for Viterbi
-    Vitbi_algo vit;
-    allocate_vit(&vit, &info);    
-    basis_fw_algo(&l, &ed, &fw, &info, &vit);
-    
-    // Parse splice sites for analysis
+    // Parse splice sites
     parse_splice_sites(&pos, &info);
     
     if (DEBUG) {
         printf("\n=== Results Summary ===\n");
         printf("Found %d donor sites and %d acceptor sites\n", pos.dons, pos.accs);
+    }
+
+    // Run Random Forest for isoform generation if requested
+    if (use_random_forest) {
+        if (DEBUG) printf("\n=== Isoform Generation with Random Forest ===\n");
+        
+        // Create locus for storing isoforms
+        Locus *loc = create_locus(n_isoforms);
+        
+        if (DEBUG) {
+            printf("Generating isoforms using Random Forest:\n");
+            printf("  Locus capacity: %d\n", n_isoforms);
+            printf("  Path restriction: %s\n", use_path_restriction ? "Yes" : "No");
+        }
+        
+        basis_fw_algo(&l, &ed, &fw, &info);
+        
+        // Create and run random forest
+        RandomForest *rf = create_random_forest(&pos, 0.05);  // min_sample_coeff = 0.05
+        generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
+        free_random_forest(rf);
+        
+        if (DEBUG)  printf("=== Random Forest Results ===\n");
+        if (DEBUG)  printf("Unique isoforms found: %d\n", loc->n_isoforms);
+        print_locus(loc, &info);
+        free_locus(loc);
     }
 
     if (print_splice_detailed) {
@@ -313,10 +335,13 @@ int main(int argc, char *argv[])
     free_alpha(&info, &fw);
     free_beta(&info, &bw);
     free_pos(&pos, &info);
+    if (use_random_forest) {
+        free_vit(&vit, &info);
+    }
+    free(l.log_values);
     free(info.original_sequence);
     free(info.numerical_sequence);
 
-    if (DEBUG) printf("\n=== EDHMM Analysis Complete ===\n");
-
+    if (DEBUG) printf("\n=== RFHMM Analysis Complete ===\n");
     return 0;
 }
