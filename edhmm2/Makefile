@@ -73,7 +73,6 @@ rf: rfhmm
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--stovit \
-		--json_output isoforms.json
 
 rf-verbose: rfhmm
 	@echo "Running Random Forest with verbose output"
@@ -85,7 +84,6 @@ rf-verbose: rfhmm
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--stovit --verbose \
-		--json_output isoforms_verbose.json
 
 rf-custom: rfhmm
 	@echo "Running Random Forest with custom capacity (1000 isoforms)"
@@ -98,7 +96,6 @@ rf-custom: rfhmm
 		--ped_intron ../models/intron.len \
 		--stovit \
 		--n_isoforms 100 \
-		--json_output isoforms_custom.json
 
 rf-restrict: rfhmm
 	@echo "Running Random Forest with path restriction"
@@ -111,7 +108,6 @@ rf-restrict: rfhmm
 		--ped_intron ../models/intron.len \
 		--stovit \
 		--restrict_path \
-		--json_output isoforms_restricted.json
 
 rf-short: rfhmm
 	@echo "Running Random Forest (short flags)"

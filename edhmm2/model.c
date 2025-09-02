@@ -514,7 +514,7 @@ void parse_splice_sites(Pos_prob *pos, Observed_events *info) {
     pos->accs_bps = malloc(accs * sizeof(int));
     pos->accs     = accs;
     idx = 0;
-    for (int i = FLANK; i < info->T-FLANK; --i) {
+    for (int i = FLANK; i < info->T-FLANK; i++) {
         if (pos->xi[i][1] != 0.0) {
             pos->accs_val[idx] = pos->xi[i][1];
             pos->accs_bps[idx] = i;
@@ -563,9 +563,9 @@ void allocate_bw(Backward_algorithm *beta, Explicit_duration *ed, Observed_event
 void allocate_pos(Pos_prob *pos, Observed_events *info){
     if(DEBUG)  printf("Start Initialize Data Structure for Posterior Probability");
 
-    int sarray = info->T;
-    pos->xi = malloc ( (sarray) * sizeof(double*) ); 
-    for( int i = 0 ; i < sarray; i++ )     
+    int sarray  = info->T;
+    pos->xi     = malloc (sarray * sizeof(double*)); 
+    for (int i = 0 ; i < sarray; i++)
         pos->xi[i] = calloc( HS , sizeof(double) );       
     
     if(DEBUG)  printf("\tFinished\n");

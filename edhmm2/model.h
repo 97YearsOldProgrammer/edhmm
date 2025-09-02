@@ -7,8 +7,6 @@
 extern int  DEBUG;
 extern int  use_random_forest;
 extern int  n_isoforms;
-extern int  n_trees;
-extern char *json_output;
 extern int  use_path_restriction;
 
 /* --------------- Computation Data Structure --------------- */
@@ -120,6 +118,8 @@ void exon_intron_parser(Lambda *l, char *filename, int digit);
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit);
 void initialize_donor_transition_matrix(Lambda *l, int depth);
 void initialize_acceptor_transition_matrix(Lambda *l, int depth);
+void allocate_emission_matrix(Lambda *l);
+void allocate_transition_matrix(Lambda *l);
 
 /* --------------- Computation Functions --------------- */
 int    power(int base, int exp);

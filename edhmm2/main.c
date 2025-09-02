@@ -154,11 +154,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (use_random_forest && json_output == NULL) {
-        json_output = "isoforms.json";
-        if (DEBUG) printf("Using default JSON output file: %s\n", json_output);
-    }
-
     // Initialize data structures
     Observed_events info;
     Lambda l;
@@ -167,18 +162,14 @@ int main(int argc, char *argv[])
     Backward_algorithm bw;
     Pos_prob pos;
 
-    // Initialize Observed_events with flank size
+    // Initialize Data Structure
     memset(&info, 0, sizeof(Observed_events));
     info.flank = flank_size;
-
-    // Initialize Explicit_duration structure properly
     memset(&ed, 0, sizeof(Explicit_duration));
-    ed.min_len_exon = -1;
-    ed.min_len_intron = -1;
-    ed.max_len_exon = 0;
-    ed.max_len_intron = 0;
-
-    // Initialize Lambda structure
+    ed.min_len_exon     = -1;
+    ed.min_len_intron   = -1;
+    ed.max_len_exon     = 0;
+    ed.max_len_intron   = 0;
     memset(&l, 0, sizeof(Lambda));
 
     if (DEBUG) printf("\n=== Starting RFHMM Analysis ===\n");
@@ -212,7 +203,6 @@ int main(int argc, char *argv[])
     if (DEBUG) printf("  Intron emission: %s\n", intron_emission);
     exon_intron_parser(&l, intron_emission, 1);
     
-    // Load explicit duration probabilities
     if (DEBUG) printf("  Exon length distribution: %s\n", Ped_exon);
     explicit_duration_probability(&ed, Ped_exon, 0);
     
@@ -228,7 +218,9 @@ int main(int argc, char *argv[])
         printf("  Analysis range: %d to %d\n", info.flank+ed.min_len_exon, info.T-info.flank-ed.min_len_exon);
     }
 
-    // allocate arr for log val summation
+    // data structure allocation
+    allocate_emission_matrix(&l);
+    allocate_transition_matrix(&l);
     l.log_values_len    = (ed.max_len_exon > ed.max_len_intron) ? ed.max_len_exon : ed.max_len_intron;
     l.log_values        = calloc(l.log_values_len, sizeof(double));
 
@@ -239,10 +231,10 @@ int main(int argc, char *argv[])
 
     if (DEBUG) printf("\nPreparing data for log-space computation...\n");
     
-    int don_size    = power(4, l.B.don_kmer_len);      // Should be 1024 for kmer=5
-    int acc_size    = power(4, l.B.acc_kmer_len);      // Should be 4096 for kmer=6
-    int exon_size   = power(4, l.B.exon_kmer_len);    // Should be 256 for kmer=4
-    int intron_size = power(4, l.B.intron_kmer_len); // Should be 256 for kmer=4
+    int don_size    = power(4, l.B.don_kmer_len);
+    int acc_size    = power(4, l.B.acc_kmer_len);
+    int exon_size   = power(4, l.B.exon_kmer_len);
+    int intron_size = power(4, l.B.intron_kmer_len);
     
     // check parser
     tolerance_checker(ed.exon, ed.exon_len, 1e-15);
