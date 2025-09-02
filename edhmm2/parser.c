@@ -6,7 +6,7 @@
 
 /* --------------- Auxiliary Function --------------- */
 
-int count_lines(const char *filename, int skip_header) {
+static int count_lines(const char *filename, int skip_header) {
     FILE *file = fopen(filename, "r");
     if (!file) return 0;
     
@@ -22,7 +22,7 @@ int count_lines(const char *filename, int skip_header) {
     return count;
 }
 
-int detect_kmer_length(const char *filename) {
+static int detect_kmer_length(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) return 0;
     
@@ -67,11 +67,10 @@ double total_prob(double *array, int length) {
 
 /* --------------- Computation for Transition Prob --------------- */
 
-void initialize_donor_transition_matrix(Lambda *l, int depth) {
-    int k = l->B.acc_kmer_len;
-    if (depth == l->A.don_size) {
-        int     idx     = base4_to_int(l->A.pos, 0, l->A.don_size);
-        double  val     = total_prob(l->A.prob, l->A.don_size);
+static void initialize_donor_transition_matrix_recursive(Lambda *l, int depth) {
+    if (depth == l->B.don_kmer_len) {
+        int     idx     = base4_to_int(l->A.pos, 0, l->B.don_kmer_len);
+        double  val     = total_prob(l->A.prob, l->B.don_kmer_len);
         l->A.dons[idx]  = val;
         return;
     }
@@ -80,14 +79,14 @@ void initialize_donor_transition_matrix(Lambda *l, int depth) {
         double prob         = l->B.dons[depth][i];
         l->A.prob[depth]    = prob;
         l->A.pos[depth]     = i;
-        initialize_donor_transition_matrix(l, depth+1);
+        initialize_donor_transition_matrix_recursive(l, depth+1);
     }
 }
 
-void initialize_acceptor_transition_matrix(Lambda *l,int depth) {  
-    if (depth == l->A.acc_size) {
-        int     idx     = base4_to_int(l->A.pos, 0, l->A.acc_size);
-        double  val     = total_prob(l->A.prob, l->A.acc_size);
+static void initialize_acceptor_transition_matrix_recursive(Lambda *l, int depth) {  
+    if (depth == l->B.acc_kmer_len) {
+        int     idx     = base4_to_int(l->A.pos, 0, l->B.acc_kmer_len);
+        double  val     = total_prob(l->A.prob, l->B.acc_kmer_len);
         l->A.accs[idx]  = val;
         return;
     }
@@ -96,48 +95,64 @@ void initialize_acceptor_transition_matrix(Lambda *l,int depth) {
         double prob         = l->B.accs[depth][i];
         l->A.prob[depth]    = prob;
         l->A.pos[depth]     = i;
-        initialize_acceptor_transition_matrix(l, depth+1);
+        initialize_acceptor_transition_matrix_recursive(l, depth+1);
     }
 }
 
-/* --------------- Memory Allocation --------------- */
+/* --------------- Compute Transition Probability Matrices --------------- */
 
-void allocate_emission_matrix(Lambda *l) {
-    // Allocate donor matrix
-    l->B.dons = malloc(l->B.don_kmer_len * sizeof(double*));
-    for (int i = 0; i < l->B.don_kmer_len; i++) {
-        l->B.dons[i] = calloc(4, sizeof(double));
-    }
+void compute_transition_matrices(Lambda *l) {
+    if (DEBUG) printf("Computing transition probability matrices...\n");
     
-    // Allocate acceptor matrix
-    l->B.accs = malloc(l->B.acc_kmer_len * sizeof(double*));
-    for (int i = 0; i < l->B.acc_kmer_len; i++) {
-        l->B.accs[i] = calloc(4, sizeof(double));
-    }
-    
-    // Allocate exon/intron arrays
-    int exon_size   = power(4, l->B.exon_kmer_len);
-    int intron_size = power(4, l->B.intron_kmer_len);
-    l->B.exon       = calloc(exon_size, sizeof(double));
-    l->B.intron     = calloc(intron_size, sizeof(double));
-}
-
-void allocate_transition_matrix(Lambda *l) {
+    // Allocate transition matrices
     l->A.don_size   = power(4, l->B.don_kmer_len);
     l->A.acc_size   = power(4, l->B.acc_kmer_len);
     l->A.dons       = calloc(l->A.don_size, sizeof(double));
     l->A.accs       = calloc(l->A.acc_size, sizeof(double));
+    
+    // Temporary arrays for recursive computation
+    l->A.pos        = calloc(l->B.acc_kmer_len, sizeof(int));  // Use larger of the two
+    l->A.prob       = calloc(l->B.acc_kmer_len, sizeof(double));
+    
+    // Compute donor transition matrix
+    if (DEBUG) printf("  Computing donor transition matrix...");
+    initialize_donor_transition_matrix_recursive(l, 0);
+    if (DEBUG) printf(" Done\n");
+    
+    // Compute acceptor transition matrix
+    if (DEBUG) printf("  Computing acceptor transition matrix...");
+    initialize_acceptor_transition_matrix_recursive(l, 0);
+    if (DEBUG) printf(" Done\n");
+    
+    // Clean up temporary arrays
+    free(l->A.pos);
+    free(l->A.prob);
+    l->A.pos = NULL;
+    l->A.prob = NULL;
+    
+    if (DEBUG) {
+        // Verify non-zero entries
+        int non_zero_dons = 0, non_zero_accs = 0;
+        for (int i = 0; i < l->A.don_size; i++) {
+            if (l->A.dons[i] > 0.0) non_zero_dons++;
+        }
+        for (int i = 0; i < l->A.acc_size; i++) {
+            if (l->A.accs[i] > 0.0) non_zero_accs++;
+        }
+        printf("  Donor matrix: %d non-zero entries out of %d\n", non_zero_dons, l->A.don_size);
+        printf("  Acceptor matrix: %d non-zero entries out of %d\n", non_zero_accs, l->A.acc_size);
+    }
 }
 
 /* --------------- Parser Functions --------------- */
 
 void read_sequence_file(const char *filename, Observed_events *info) {
-    if (DEBUG) printf("Start reading the sequence data:\n");
+    if (DEBUG) printf("Reading sequence from: %s\n", filename);
     
     FILE *file = fopen(filename, "r");
     if (file == NULL) {
-        if (DEBUG) printf("Error: Cannot open sequence file %s\n", filename);
-        return;
+        fprintf(stderr, "Error: Cannot open sequence file %s\n", filename);
+        exit(1);
     }
 
     fseek(file, 0, SEEK_END);
@@ -150,14 +165,12 @@ void read_sequence_file(const char *filename, Observed_events *info) {
     // Allocate sequence buffer
     char *sequence = (char*)malloc(file_size + 1);
     size_t seq_index = 0;
-    int in_header = 0;
 
     // Parse each line
     char *line = strtok(buffer, "\n");
     while (line != NULL) {
         if (line[0] == '>') {
-            in_header = 1;
-            if (DEBUG) printf("\tSkipping header: %s\n", line);
+            if (DEBUG) printf("  Skipping header: %s\n", line);
             line = strtok(NULL, "\n");
             continue;
         }
@@ -180,32 +193,29 @@ void read_sequence_file(const char *filename, Observed_events *info) {
     free(buffer);
     fclose(file);
     
-    if (DEBUG) printf("\tWe get original sequence with Seq len: %zu\n", seq_index);
-    if (DEBUG) printf("\tFinished\n");
-    if (DEBUG) printf("\n");
+    if (DEBUG) printf("  Sequence length: %zu bp\n", seq_index);
 }
 
 void donor_parser(Lambda *l, char *filename) {
-    if (DEBUG) printf("Parsing donor site emission probabilities...");
+    if (DEBUG) printf("  Parsing donor PWM: %s...", filename);
     
     l->B.don_kmer_len = count_lines(filename, 1);
     if (l->B.don_kmer_len == 0) {
-        printf("ERROR: Cannot determine donor k-mer length\n");
-        return;
+        fprintf(stderr, "ERROR: Cannot determine donor k-mer length\n");
+        exit(1);
     }
     
-    if (!l->B.dons) {
-        l->B.dons = malloc(l->B.don_kmer_len * sizeof(double*));
-        for (int i = 0; i < l->B.don_kmer_len; i++) {
-            l->B.dons[i] = calloc(4, sizeof(double));
-        }
+    // Allocate emission matrix for donors
+    l->B.dons = malloc(l->B.don_kmer_len * sizeof(double*));
+    for (int i = 0; i < l->B.don_kmer_len; i++) {
+        l->B.dons[i] = calloc(4, sizeof(double));
     }
     
-    // Parse Prob
+    // Parse PWM file
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("ERROR: Cannot open donor file\n");
-        return;
+        fprintf(stderr, "ERROR: Cannot open donor file %s\n", filename);
+        exit(1);
     }
     
     char line[256];
@@ -226,39 +236,29 @@ void donor_parser(Lambda *l, char *filename) {
     }
     
     fclose(file);
-    if (DEBUG) printf(" Done (k-mer length: %d)\n", l->B.don_kmer_len);
-
-    // compute all possible transition prob
-    int don_size    = power(4, l->B.don_kmer_len);
-    l->A.dons       = calloc(don_size, sizeof(double));
-    l->A.pos        = calloc(l->B.don_kmer_len, sizeof(int));
-    l->A.prob       = calloc(l->B.don_kmer_len, sizeof(double));
-    initialize_donor_transition_matrix(l, 0);
-    free(l->A.pos);
-    free(l->A.prob);
+    if (DEBUG) printf(" k-mer=%d\n", l->B.don_kmer_len);
 }
 
 void acceptor_parser(Lambda *l, char *filename) {
-    if (DEBUG) printf("Parsing acceptor site emission probabilities...");
+    if (DEBUG) printf("  Parsing acceptor PWM: %s...", filename);
     
     l->B.acc_kmer_len = count_lines(filename, 1);
     if (l->B.acc_kmer_len == 0) {
-        printf("ERROR: Cannot determine acceptor k-mer length\n");
-        return;
+        fprintf(stderr, "ERROR: Cannot determine acceptor k-mer length\n");
+        exit(1);
     }
     
-    if (!l->B.accs) {
-        l->B.accs = malloc(l->B.acc_kmer_len * sizeof(double*));
-        for (int i = 0; i < l->B.acc_kmer_len; i++) {
-            l->B.accs[i] = calloc(4, sizeof(double));
-        }
+    // Allocate emission matrix for acceptors
+    l->B.accs = malloc(l->B.acc_kmer_len * sizeof(double*));
+    for (int i = 0; i < l->B.acc_kmer_len; i++) {
+        l->B.accs[i] = calloc(4, sizeof(double));
     }
     
-    // Parse Prob
+    // Parse PWM file
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("ERROR: Cannot open acceptor file\n");
-        return;
+        fprintf(stderr, "ERROR: Cannot open acceptor file %s\n", filename);
+        exit(1);
     }
     
     char line[256];
@@ -279,43 +279,33 @@ void acceptor_parser(Lambda *l, char *filename) {
     }
     
     fclose(file);
-    if (DEBUG) printf(" Done (k-mer length: %d)\n", l->B.acc_kmer_len);
-    
-    // compute all possible transition prob
-    int acc_size    = power(4, l->B.acc_kmer_len);
-    l->A.accs       = calloc(acc_size, sizeof(double));
-    l->A.pos        = calloc(l->B.acc_kmer_len, sizeof(int));
-    l->A.prob       = calloc(l->B.acc_kmer_len, sizeof(double));
-    initialize_acceptor_transition_matrix(l, 0);  
-    free(l->A.pos);
-    free(l->A.prob);
+    if (DEBUG) printf(" k-mer=%d\n", l->B.acc_kmer_len);
 }
 
 void exon_intron_parser(Lambda *l, char *filename, int digit) {
-    // for emission probability of exon and intron
     const char *type = (digit == 0) ? "exon" : "intron";
-    if (DEBUG) printf("Parsing %s emission probabilities...", type);
+    if (DEBUG) printf("  Parsing %s MM: %s...", type, filename);
     
     int kmer_len = detect_kmer_length(filename);
     if (kmer_len == 0) {
-        printf("ERROR: Cannot detect k-mer length for %s\n", type);
-        return;
+        fprintf(stderr, "ERROR: Cannot detect k-mer length for %s\n", type);
+        exit(1);
     }
     
     if (digit == 0) {
         l->B.exon_kmer_len = kmer_len;
         int size = power(4, kmer_len);
-        if (!l->B.exon) l->B.exon = calloc(size, sizeof(double));
+        l->B.exon = calloc(size, sizeof(double));
     } else {
         l->B.intron_kmer_len = kmer_len;
         int size = power(4, kmer_len);
-        if (!l->B.intron) l->B.intron = calloc(size, sizeof(double));
+        l->B.intron = calloc(size, sizeof(double));
     }
     
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("ERROR: Cannot open %s file\n", type);
-        return;
+        fprintf(stderr, "ERROR: Cannot open %s file %s\n", type, filename);
+        exit(1);
     }
     
     char line[256];
@@ -341,27 +331,27 @@ void exon_intron_parser(Lambda *l, char *filename, int digit) {
     }
     
     fclose(file);
-    if (DEBUG) printf(" Done (k-mer length: %d)\n", kmer_len);
+    if (DEBUG) printf(" k-mer=%d\n", kmer_len);
 }
 
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit) {
     const char *type = (digit == 0) ? "exon" : "intron";
-    if (DEBUG) printf("Parsing %s duration probabilities...", type);
+    if (DEBUG) printf("  Parsing %s length: %s...", type, filename);
     
     int n_lines = count_lines(filename, 1);
     
     if (digit == 0) {
         ed->exon_len = n_lines;
-        if (!ed->exon) ed->exon = calloc(n_lines, sizeof(double));
+        ed->exon = calloc(n_lines, sizeof(double));
     } else {
         ed->intron_len = n_lines;
-        if (!ed->intron) ed->intron = calloc(n_lines, sizeof(double));
+        ed->intron = calloc(n_lines, sizeof(double));
     }
     
     FILE *file = fopen(filename, "r");
     if (!file) {
-        printf("ERROR: Cannot open %s duration file\n", type);
-        return;
+        fprintf(stderr, "ERROR: Cannot open %s duration file %s\n", type, filename);
+        exit(1);
     }
     
     char line[256];
@@ -385,20 +375,23 @@ void explicit_duration_probability(Explicit_duration *ed, char *filename, int di
             if (prob > 0.0 && ed->min_len_exon == -1) {
                 ed->min_len_exon = duration;
             }
-            ed->max_len_exon = duration;
+            if (prob > 0.0) {
+                ed->max_len_exon = duration;
+            }
         } else {
             ed->intron[duration] = prob;
             if (prob > 0.0 && ed->min_len_intron == -1) {
                 ed->min_len_intron = duration;
             }
-            ed->max_len_intron = duration;
+            if (prob > 0.0) {
+                ed->max_len_intron = duration;
+            }
         }
         duration++;
     }
     
     fclose(file);
-    if (DEBUG) printf(" Done (length: %d, min: %d, max: %d)\n", 
-                      n_lines,
+    if (DEBUG) printf(" min=%d, max=%d\n", 
                       digit == 0 ? ed->min_len_exon : ed->min_len_intron,
                       digit == 0 ? ed->max_len_exon : ed->max_len_intron);
 }
@@ -429,7 +422,6 @@ void free_lambda(Lambda *l) {
     if (l->A.accs) free(l->A.accs);
     
     // Free the rest
-    if (l->pi) free(l->pi);
     if (l->log_values) free(l->log_values);
 }
 

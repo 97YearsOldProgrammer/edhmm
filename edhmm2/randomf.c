@@ -10,6 +10,16 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
     RandomForest *rf = malloc(sizeof(RandomForest));
     
     int total_sites = pos->dons + pos->accs;
+    
+    // Add validation for empty dataset
+    if (total_sites <= 0) {
+        rf->n_sites = 0;
+        rf->min_samples_split = 1;
+        rf->all_sites = NULL;
+        rf->gini_threshold = 0.1;
+        return rf;
+    }
+    
     rf->all_sites = malloc(total_sites * sizeof(SpliceSite));
     rf->n_sites = total_sites;
     
@@ -28,8 +38,12 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
         idx++;
     }
     
-    rf->min_samples_split   = (int)(total_sites * min_sample_coeff);
-    rf->gini_threshold      = 0.1;
+    // Ensure min_samples_split is at least 2
+    rf->min_samples_split = (int)(total_sites * min_sample_coeff);
+    if (rf->min_samples_split < 2) {
+        rf->min_samples_split = 2;
+    }
+    rf->gini_threshold = 0.1;
 
     srand(time(NULL));
     return rf;
@@ -38,6 +52,11 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
 /* --------------- Bootstrap Sampling --------------- */
 
 SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
+    // Add safety check
+    if (n_sites <= 0 || sites == NULL) {
+        return NULL;
+    }
+    
     SpliceSite *sample = malloc(n_sites * sizeof(SpliceSite));
     for (int i = 0; i < n_sites; i++) {
         sample[i] = sites[rand() % n_sites];
@@ -89,12 +108,26 @@ int compare_sites_by_val(const void *a, const void *b) {
 
 int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
                     int min_samples, double gini_threshold) {
-
+    
+    // Add boundary check
+    if (n_sites <= 1 || sites == NULL) {
+        return 0;  // Can't split with 0 or 1 site
+    }
+    
     // default mtry = 1/3
     int subset_size = n_sites / 3;
     if (subset_size < 2) subset_size = 2;
     
+    // Ensure subset_size doesn't exceed n_sites
+    if (subset_size > n_sites) {
+        subset_size = n_sites;
+    }
+    
     SpliceSite *subset = malloc(subset_size * sizeof(SpliceSite));
+    if (!subset) {
+        return 0;  // Allocation failed
+    }
+    
     for (int i = 0; i < subset_size; i++) {
         subset[i] = sites[rand() % n_sites];
     }
@@ -162,6 +195,12 @@ int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
                       Vitbi_algo *vit, int use_path_restriction) {
+    
+    // Safety check
+    if (n_sites <= 0 || sites == NULL) {
+        return;
+    }
+    
     // Create subset
     Pos_prob subset_pos;
     int n_dons = 0, n_accs = 0;
@@ -248,6 +287,11 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction) {
     
+    // Add safety check at the beginning
+    if (n_sites <= 0 || sites == NULL) {
+        return;  // Nothing to process
+    }
+    
     // Check stopping criteria
     if (n_sites < rf->min_samples_split) {
         viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, use_path_restriction);
@@ -296,9 +340,21 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Locus *loc, Vitbi_algo *vit,
                                      int use_path_restriction) {
     
+    // Add check for empty dataset
+    if (rf->n_sites <= 0 || rf->all_sites == NULL) {
+        if (DEBUG) printf("No splice sites available for Random Forest\n");
+        return;
+    }
+    
     while (loc->n_isoforms < loc->capacity) {        
         // bootstrap
         SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->n_sites);
+        
+        // Check if bootstrap was successful
+        if (bootstrap == NULL) {
+            if (DEBUG) printf("Bootstrap sampling failed\n");
+            break;
+        }
         
         // build tree and collect isoform
         build_tree_with_viterbi(bootstrap, rf->n_sites, rf, info, ed, l, 
@@ -336,6 +392,10 @@ int isoform_exists(Locus *loc, Isoform *new_iso) {
 /* --------------- Cleanup --------------- */
 
 void free_random_forest(RandomForest *rf) {
-    free(rf->all_sites);
-    free(rf);
+    if (rf) {
+        if (rf->all_sites) {
+            free(rf->all_sites);
+        }
+        free(rf);
+    }
 }

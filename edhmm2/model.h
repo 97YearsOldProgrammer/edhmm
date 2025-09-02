@@ -110,20 +110,25 @@ typedef struct {
 /* ---------------------------------------------------- */
 
 /* --------------- Input Parser --------------- */
+static int  count_lines(const char *filename, int skip_header);
+static int  detect_kmer_length(const char *filename);
+static void initialize_donor_transition_matrix_recursive(Lambda *l, int depth);
+static void initialize_acceptor_transition_matrix_recursive(Lambda *l, int depth);
+
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
 void donor_parser(Lambda *l, char *filename);
 void acceptor_parser(Lambda *l, char *filename);
 void exon_intron_parser(Lambda *l, char *filename, int digit);
 void explicit_duration_probability(Explicit_duration *ed, char *filename, int digit);
-void initialize_donor_transition_matrix(Lambda *l, int depth);
-void initialize_acceptor_transition_matrix(Lambda *l, int depth);
-void allocate_emission_matrix(Lambda *l);
-void allocate_transition_matrix(Lambda *l);
+void compute_transition_matrices(Lambda *l);
+
+void free_lambda(Lambda *l);
+void free_explicit_duration(Explicit_duration *ed);
 
 /* --------------- Computation Functions --------------- */
 int    power(int base, int exp);
-int    base4_to_int(int *array, int beg, int length);
+int     base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
 double log_sum_sub(double val, double add, double sub);

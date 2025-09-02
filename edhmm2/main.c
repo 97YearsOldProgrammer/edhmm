@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Initialize data structures
+// Initialize data structures
     Observed_events info;
     Lambda l;
     Explicit_duration ed;
@@ -174,12 +174,12 @@ int main(int argc, char *argv[])
 
     if (DEBUG) printf("\n=== Starting RFHMM Analysis ===\n");
 
-    // Load input sequence
-    if (DEBUG) printf("Loading sequence from: %s\n", seq_input);
+    // ========== PHASE 1: Load Sequence ==========
+    if (DEBUG) printf("\n--- Phase 1: Loading Sequence ---\n");
     read_sequence_file(seq_input, &info);
     numerical_transcription(&info, info.original_sequence);
-
-    // Validate flank size against sequence length
+    
+    // Validate flank size
     if (info.flank * 2 >= info.T) {
         fprintf(stderr, "Error: Flank size (%d) is too large for sequence length (%d)\n", 
                 info.flank, info.T);
@@ -187,62 +187,57 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Load model files - parsing phase first
-    if (DEBUG) {
-        printf("\nLoading model files:\n");
-        printf("  Donor emission: %s\n", don_emission);
-    }
+    // ========== PHASE 2: Parse Model Files ==========
+    if (DEBUG) printf("\n--- Phase 2: Parsing Model Files ---\n");
+    
+    // Parse emission matrices (PWMs and Markov models)
     donor_parser(&l, don_emission);
-    
-    if (DEBUG) printf("  Acceptor emission: %s\n", acc_emission);
     acceptor_parser(&l, acc_emission);
-    
-    if (DEBUG) printf("  Exon emission: %s\n", exon_emission);
     exon_intron_parser(&l, exon_emission, 0);
-    
-    if (DEBUG) printf("  Intron emission: %s\n", intron_emission);
     exon_intron_parser(&l, intron_emission, 1);
     
-    if (DEBUG) printf("  Exon length distribution: %s\n", Ped_exon);
+    // Parse duration probabilities
     explicit_duration_probability(&ed, Ped_exon, 0);
-    
-    if (DEBUG) printf("  Intron length distribution: %s\n", Ped_intron);
     explicit_duration_probability(&ed, Ped_intron, 1);
 
+    // ========== PHASE 3: Compute Transition Matrices ==========
+    if (DEBUG) printf("\n--- Phase 3: Computing Transition Matrices ---\n");
+    compute_transition_matrices(&l);
+    
+    // Allocate log_values array after we know the max duration
+    l.log_values_len = (ed.max_len_exon > ed.max_len_intron) ? ed.max_len_exon : ed.max_len_intron;
+    l.log_values = calloc(l.log_values_len, sizeof(double));
+
+    // ========== PHASE 4: Validate and Display Parameters ==========
     if (DEBUG) {
-        printf("\nParameters loaded:\n");
+        printf("\n--- Phase 4: Validation ---\n");
+        printf("Parameters loaded:\n");
         printf("  Sequence length: %d bp\n", info.T);
         printf("  Flank size: %d bp\n", info.flank);
         printf("  Exon length range: %d-%d bp\n", ed.min_len_exon, ed.max_len_exon);
         printf("  Intron length range: %d-%d bp\n", ed.min_len_intron, ed.max_len_intron);
-        printf("  Analysis range: %d to %d\n", info.flank+ed.min_len_exon, info.T-info.flank-ed.min_len_exon);
-    }
-
-    // data structure allocation
-    allocate_emission_matrix(&l);
-    allocate_transition_matrix(&l);
-    l.log_values_len    = (ed.max_len_exon > ed.max_len_intron) ? ed.max_len_exon : ed.max_len_intron;
-    l.log_values        = calloc(l.log_values_len, sizeof(double));
-
-    if (DEBUG) {
+        printf("  Analysis range: %d to %d\n", 
+               info.flank+ed.min_len_exon, info.T-info.flank-ed.min_len_exon);
+        
         print_transition_matrices_summary(&l);
         print_duration_summary(&ed);
     }
 
-    if (DEBUG) printf("\nPreparing data for log-space computation...\n");
+    // ========== PHASE 5: Convert to Log Space ==========
+    if (DEBUG) printf("\n--- Phase 5: Converting to Log Space ---\n");
     
     int don_size    = power(4, l.B.don_kmer_len);
     int acc_size    = power(4, l.B.acc_kmer_len);
     int exon_size   = power(4, l.B.exon_kmer_len);
     int intron_size = power(4, l.B.intron_kmer_len);
     
-    // check parser
+    // Check for numerical issues
     tolerance_checker(ed.exon, ed.exon_len, 1e-15);
     tolerance_checker(ed.intron, ed.intron_len, 1e-15);
     tolerance_checker(l.A.dons, don_size, 1e-15);
     tolerance_checker(l.A.accs, acc_size, 1e-15);
 
-    // Send into log space
+    // Convert to log space for numerical stability
     log_space_converter(ed.exon, ed.exon_len);
     log_space_converter(ed.intron, ed.intron_len);
     log_space_converter(l.A.dons, don_size);
@@ -250,10 +245,10 @@ int main(int argc, char *argv[])
     log_space_converter(l.B.exon, exon_size);
     log_space_converter(l.B.intron, intron_size);
 
-    /* --------------- Computation --------------- */
-
-    // Allocate memory
-    if (DEBUG) printf("\nAllocating memory for algorithms...\n");
+    // ========== PHASE 6: Run Forward-Backward Algorithm ==========
+    if (DEBUG) printf("\n--- Phase 6: Forward-Backward Algorithm ---\n");
+    
+    // Allocate memory for algorithms
     allocate_fw(&info, &fw, &ed);
     allocate_bw(&bw, &ed, &info);
     allocate_pos(&pos, &info);
@@ -264,21 +259,23 @@ int main(int argc, char *argv[])
         allocate_vit(&vit, &info);
     }
 
-    // fw algo
-    if (DEBUG) printf("\nRunning forward-backward algorithm:\n");    
+    // Run forward algorithm
     basis_fw_algo(&l, &ed, &fw, &info);
     if (DEBUG) printf("  Forward basis complete\n");
     fw_algo(&l, &fw, &info, &ed);
     if (DEBUG) printf("  Forward algorithm complete\n");
-    // bw algo
+    
+    // Run backward algorithm
     basis_bw_algo(&l, &bw, &info, &ed);
     if (DEBUG) printf("  Backward basis complete\n");
     bw_algo(&l, &bw, &info, &ed);
     if (DEBUG) printf("  Backward algorithm complete\n");
-    // Posterior probability
+    
+    // Calculate posterior probabilities
     pos_prob(&bw, &fw, &info, &pos);
     if (DEBUG) printf("  Posterior probabilities calculated\n");
-    // Parse splice sites
+    
+    // Parse splice sites from posterior probabilities
     parse_splice_sites(&pos, &info);
     
     if (DEBUG) {
@@ -286,43 +283,45 @@ int main(int argc, char *argv[])
         printf("Found %d donor sites and %d acceptor sites\n", pos.dons, pos.accs);
     }
 
-    // Run Random Forest for isoform generation if requested
+    // ========== PHASE 7: Random Forest (if requested) ==========
     if (use_random_forest) {
-        if (DEBUG) printf("\n=== Isoform Generation with Random Forest ===\n");
+        if (DEBUG) printf("\n--- Phase 7: Random Forest Isoform Generation ---\n");
         
-        // Create locus for storing isoforms
-        Locus *loc = create_locus(n_isoforms);
-        
-        if (DEBUG) {
-            printf("Generating isoforms using Random Forest:\n");
-            printf("  Locus capacity: %d\n", n_isoforms);
-            printf("  Path restriction: %s\n", use_path_restriction ? "Yes" : "No");
+        // Check if we have splice sites to work with
+        if (pos.dons == 0 || pos.accs == 0) {
+            printf("Warning: No splice sites found. Cannot run Random Forest.\n");
+        } else {
+            // Create locus for storing isoforms
+            Locus *loc = create_locus(n_isoforms);
+            
+            if (DEBUG) {
+                printf("Generating isoforms using Random Forest:\n");
+                printf("  Locus capacity: %d\n", n_isoforms);
+                printf("  Path restriction: %s\n", use_path_restriction ? "Yes" : "No");
+            }
+            
+            // Re-run basis for Viterbi
+            basis_fw_algo(&l, &ed, &fw, &info);
+            
+            // Create and run random forest
+            RandomForest *rf = create_random_forest(&pos, 0.05);  // min_sample_coeff = 0.05
+            generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
+            free_random_forest(rf);
+            
+            if (DEBUG) printf("Unique isoforms found: %d\n", loc->n_isoforms);
+            print_locus(loc, &info);
+            free_locus(loc);
         }
-        
-        basis_fw_algo(&l, &ed, &fw, &info);
-        
-        // Create and run random forest
-        RandomForest *rf = create_random_forest(&pos, 0.05);  // min_sample_coeff = 0.05
-        generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
-        free_random_forest(rf);
-        
-        if (DEBUG)  printf("=== Random Forest Results ===\n");
-        if (DEBUG)  printf("Unique isoforms found: %d\n", loc->n_isoforms);
-        print_locus(loc, &info);
-        free_locus(loc);
     }
 
+    // ========== PHASE 8: Print Results (if requested) ==========
     if (print_splice_detailed) {
         print_splice_sites(&pos, &info);
-        
-        if (DEBUG) {
-            printf("\n=== Debug Info ===\n");
-            printf("fw.basis[0][0] (exon)  = %.10f\n", fw.basis[0][0]);
-            printf("fw.basis[1][0] (intron)= %.10f\n", fw.basis[1][0]);
-        }
     }
 
-    // Cleanup
+    // ========== PHASE 9: Cleanup ==========
+    if (DEBUG) printf("\n--- Phase 9: Cleanup ---\n");
+    
     free_splice_sites(&pos);
     free_alpha(&info, &fw);
     free_beta(&info, &bw);
@@ -333,6 +332,8 @@ int main(int argc, char *argv[])
     free(l.log_values);
     free(info.original_sequence);
     free(info.numerical_sequence);
+    free_lambda(&l);
+    free_explicit_duration(&ed);
 
     if (DEBUG) printf("\n=== RFHMM Analysis Complete ===\n");
     return 0;
