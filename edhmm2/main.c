@@ -329,12 +329,11 @@ int main(int argc, char *argv[])
     if (use_random_forest) {
         free_vit(&vit, &info);
     }
-    free(l.log_values);
     free(info.original_sequence);
     free(info.numerical_sequence);
     free_lambda(&l);
     free_explicit_duration(&ed);
-
+    
     if (DEBUG) printf("\n=== RFHMM Analysis Complete ===\n");
     return 0;
 }

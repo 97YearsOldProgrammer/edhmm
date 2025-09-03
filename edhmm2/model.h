@@ -92,11 +92,12 @@ typedef struct {
 /* --------------- Isoform Data Structure --------------- */
 
 typedef struct {
-    int beg;                // isoform begin position
-    int end;                // isoform end position
-    int *dons;              // donor site positions
-    int *accs;              // acceptor site positions
-    int n_introns;          // number of introns
+    int     beg;                // isoform begin position
+    int     end;                // isoform end position
+    int     *dons;              // donor site positions
+    int     *accs;              // acceptor site positions
+    int     n_introns;          // number of introns
+    double  val;
 } Isoform;
 
 typedef struct {
@@ -131,9 +132,10 @@ int    power(int base, int exp);
 int     base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
-double log_sum_sub(double val, double add, double sub);
 void   tolerance_checker(double *array, int len, const double epsilon);
 void   log_space_converter(double *array, int len);
+
+static double log_sum_sub(double val, double add, double sub);
 
 /* --------------- Forward Algorithm --------------- */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
@@ -168,7 +170,7 @@ void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration
                         Vitbi_algo *vit, Lambda *l, Locus *loc);
 void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
                              Vitbi_algo *vit, Lambda *l, Locus *loc);
-void extract_isoform_from_path(int *path, Observed_events *info, int flank, Isoform *iso);
+void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
 
 /* --------------- Locus Class --------------- */
 Locus* create_locus(int initial_capacity);

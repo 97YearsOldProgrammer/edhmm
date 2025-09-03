@@ -6,7 +6,7 @@
 
 /* --------------- Auxilary Function --------------- */
 
-double log_sum_sub(double val, double add, double sub) {
+static double log_sum_sub(double val, double add, double sub) {
     double max          = (val > add) ? val : add;    
     double sum          = exp(val - max) + exp(add - max);
     double log_sum      = max + log(sum);
@@ -26,17 +26,20 @@ void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration
                         Vitbi_algo *vit, Lambda *l, Locus *loc) {
     int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
     
-    int *path       = calloc(info->T, sizeof(int));
-    int first_dons  = pos->dons_bps[0];
+    int *path           = calloc(info->T, sizeof(int));
+    double *path_val    = calloc(info->T, sizeof(double));
+    int first_dons      = pos->dons_bps[0];
 
-    for (int t = FLANK; t <= first_dons; t++)
+    for (int t = FLANK; t <= first_dons; t++) {
         path[t] = 0;
+        path_val[t] = vit->v[0][t];
+    }
     
     double exon_val, intron_val;
     
     for (int t = first_dons + 1; t < info->T - FLANK; t++) {
-        exon_val = vit->v[0][t];
-        intron_val = vit->v[1][t];
+        exon_val    = vit->v[0][t];
+        intron_val  = vit->v[1][t];
         
         if (pos->xi[t][0] != 0.0) {
             vit->v[0][t] = log_sum_sub(exon_val, 0.0, pos->xi[t][0]);
@@ -46,27 +49,31 @@ void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration
             vit->v[0][t] = log_sum_sub(exon_val, pos->xi[t][1], 0.0);
             vit->v[1][t] = log_sum_sub(intron_val, 0.0, pos->xi[t][1]);
         }
-        else {
-            int idx = base4_to_int(info->numerical_sequence, t-3, 4);
-            vit->v[0][t] = vit->v[0][t-1] + l->B.exon[idx];
-            vit->v[1][t] = vit->v[1][t-1] + l->B.intron[idx];
-        }
         
         if (vit->v[0][t] > vit->v[1][t]) {
             path[t] = 0;
+            path_val[t] = vit->v[0][t];
         } else {
             path[t] = 1;
+            path_val[t] = vit->v[1][t];
         }
+    }
+    
+    double total_val = 0.0;
+    for (int t = FLANK; t < info->T - FLANK; t++) {
+        total_val += path_val[t];
     }
     
     if (loc->n_isoforms < loc->capacity) {
         Isoform *iso = create_isoform(FLANK, info->T - FLANK - 1);
-        extract_isoform_from_path(path, info, FLANK, iso);
+        extract_isoform_from_path(path, info, iso);
+        iso->val = total_val;
         loc->isoforms[loc->n_isoforms++] = iso;
     }
+    
     free(path);
+    free(path_val);
 }
-
 
 void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
                              Vitbi_algo *vit, Lambda *l, Locus *loc) {
@@ -74,11 +81,13 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
     
     int *path               = calloc(info->T, sizeof(int));
     int *last_transition    = calloc(info->T, sizeof(int));
+    double *path_val        = calloc(info->T, sizeof(double));
     int first_dons          = pos->dons_bps[0];
     
     for (int t = FLANK; t <= first_dons; t++) {
         path[t] = 0;
         last_transition[t] = FLANK;
+        path_val[t] = vit->v[0][t];
     }
     
     double exon_val, intron_val;
@@ -89,34 +98,22 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
         int prev_state      = path[t-1];
         int state_duration  = t - last_transition[t-1];
         
-        if(pos->xi[t][0] != 0.0) {
+        if (pos->xi[t][0] != 0.0) {
             if (prev_state == 0 && state_duration >= ed->min_len_exon) {
                 vit->v[0][t] = log_sum_sub(exon_val, 0.0, pos->xi[t][0]);
                 vit->v[1][t] = log_sum_sub(intron_val, pos->xi[t][0], 0.0);
-            } else {
-                int idx = base4_to_int(info->numerical_sequence, t-3, 4);
-                vit->v[0][t] = vit->v[0][t-1] + l->B.exon[idx];
-                vit->v[1][t] = vit->v[1][t-1] + l->B.intron[idx];
-            }
+            } 
         }
         else if (pos->xi[t][1] != 0.0) {
             if (prev_state == 1 && state_duration >= ed->min_len_intron) {
                 vit->v[0][t] = log_sum_sub(exon_val, pos->xi[t][1], 0.0);
                 vit->v[1][t] = log_sum_sub(intron_val, 0.0, pos->xi[t][1]);
-            } else {
-                int idx = base4_to_int(info->numerical_sequence, t-3, 4);
-                vit->v[0][t] = vit->v[0][t-1] + l->B.exon[idx];
-                vit->v[1][t] = vit->v[1][t-1] + l->B.intron[idx];
             }
-        }
-        else {
-            int idx = base4_to_int(info->numerical_sequence, t-3, 4);
-            vit->v[0][t] = vit->v[0][t-1] + l->B.exon[idx];
-            vit->v[1][t] = vit->v[1][t-1] + l->B.intron[idx];
         }
         
         if (vit->v[0][t] > vit->v[1][t]) {
             path[t] = 0;
+            path_val[t] = vit->v[0][t];
             if (prev_state == 1) {
                 last_transition[t] = t;
             } else {
@@ -124,6 +121,7 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
             }
         } else {
             path[t] = 1;
+            path_val[t] = vit->v[1][t];
             if (prev_state == 0) {
                 last_transition[t] = t;
             } else {
@@ -132,23 +130,32 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
         }
     }
     
+    double total_val = 0.0;
+    for (int t = FLANK; t < info->T - FLANK; t++) {
+        total_val += path_val[t];
+    }
+    
     if (loc->n_isoforms < loc->capacity) {
         Isoform *iso = create_isoform(FLANK, info->T - FLANK - 1);
-        extract_isoform_from_path(path, info, FLANK, iso);
+        extract_isoform_from_path(path, info, iso);
+        iso->val = total_val;
         loc->isoforms[loc->n_isoforms++] = iso;
     }
     
     free(path);
     free(last_transition);
+    free(path_val);
 }
 
-void extract_isoform_from_path(int *path, Observed_events *info, int flank, Isoform *iso) {
+void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso) {
+    int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
+
     int *temp_dons = malloc(info->T * sizeof(int));
     int *temp_accs = malloc(info->T * sizeof(int));
     int n_dons = 0;
     int n_accs = 0;
     
-    for (int t = flank + 1; t < info->T - flank - 1; t++) {
+    for (int t = FLANK + 1; t < info->T - FLANK - 1; t++) {
         if (path[t-1] == 0 && path[t] == 1) {
             temp_dons[n_dons++] = t;
         }
@@ -179,9 +186,10 @@ void allocate_vit(Vitbi_algo *vit, Observed_events *info) {
     if(DEBUG) printf("Start allocate memory for the viterbi algorithm:");
     
     int size_array = info->T;
-    vit->v = malloc( (size_array) * sizeof(double*) );    
-    for( int i = 0 ; i < size_array; i++ )
-        vit->v[i] = calloc( HS , sizeof(double) );
+    vit->v = malloc(HS * sizeof(double*));    
+    for(int i = 0; i < HS; i++) {
+        vit->v[i] = calloc(size_array, sizeof(double));
+    }
     
     if(DEBUG) printf("\tFinished\n");
 }
@@ -190,9 +198,9 @@ void free_vit(Vitbi_algo *vit, Observed_events *info) {
     if(DEBUG) printf("Start freeing memory for the viterbi algorithm:");
     
     int size_array = info->T;
-    for( int i = 0 ; i < size_array; i++ )
-        free( vit->v[i] );
-    free( vit->v );
+    for(int i = 0; i < size_array; i++)
+        free(vit->v[i]);
+    free(vit->v);
     
     if(DEBUG) printf("\tFinished\n");
 }

@@ -51,7 +51,7 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
 
 /* --------------- Bootstrap Sampling --------------- */
 
-SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
+static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
     // Add safety check
     if (n_sites <= 0 || sites == NULL) {
         return NULL;
@@ -66,7 +66,7 @@ SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
 
 /* --------------- Splitting Criteria --------------- */
 
-double compute_mse(SpliceSite *sites, int n_sites) {
+static double compute_mse(SpliceSite *sites, int n_sites) {
     if (n_sites == 0) return 0.0;
     
     double mean = 0.0;
@@ -83,7 +83,7 @@ double compute_mse(SpliceSite *sites, int n_sites) {
     return mse / n_sites;
 }
 
-double compute_gini(SpliceSite *sites, int n_sites) {
+static double compute_gini(SpliceSite *sites, int n_sites) {
     if (n_sites == 0) return 0.0;
     
     int donors = 0, acceptors = 0;
@@ -98,7 +98,7 @@ double compute_gini(SpliceSite *sites, int n_sites) {
     return 1.0 - (p_donor * p_donor + p_acceptor * p_acceptor);
 }
 
-int compare_sites_by_val(const void *a, const void *b) {
+static int compare_sites_by_val(const void *a, const void *b) {
     SpliceSite *sa = (SpliceSite*)a;
     SpliceSite *sb = (SpliceSite*)b;
     if (sa->val < sb->val)      return -1;
@@ -106,7 +106,7 @@ int compare_sites_by_val(const void *a, const void *b) {
     else return 0;
 }
 
-int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
+static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
                     int min_samples, double gini_threshold) {
     
     // Add boundary check

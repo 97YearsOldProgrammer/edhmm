@@ -83,10 +83,11 @@ rf-verbose: rfhmm
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
+		--n_isoforms 100 \
 		--stovit --verbose \
 
 rf-custom: rfhmm
-	@echo "Running Random Forest with custom capacity (1000 isoforms)"
+	@echo "Running Random Forest with custom capacity (100 isoforms)"
 	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
