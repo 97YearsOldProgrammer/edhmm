@@ -4,6 +4,102 @@
 #include "randomf.h"
 #include "model.h"
 
+/* --------------- Hash Table Functions --------------- */
+
+IsoformHashTable* create_hash_table(int size) {
+    IsoformHashTable *table = malloc(sizeof(IsoformHashTable));
+    table->size             = size;
+    table->count            = 0;
+    table->buckets          = calloc(size, sizeof(HashNode*));
+    return table;
+}
+
+void free_hash_table(IsoformHashTable *table) {
+    if (!table) return;
+    
+    for (int i = 0; i < table->size; i++) {
+        HashNode *current = table->buckets[i];
+        while (current) {
+            HashNode *next = current->next;
+            free(current);
+            current = next;
+        }
+    }
+    free(table->buckets);
+    free(table);
+}
+
+unsigned long compute_isoform_hash(Isoform *iso, int table_size) {
+    if (iso->n_introns == 0) {
+        return 0;
+    }
+    
+    unsigned long hash          = 0;
+    unsigned long sum_donors    = 0;
+    unsigned long sum_acceptors = 0;
+    
+    for (int i = 0; i < iso->n_introns; i++) {
+        sum_donors      += iso->dons[i];
+        sum_acceptors   += iso->accs[i];
+    }
+    
+    hash = (iso->n_introns * 31UL +
+            iso->n_introns * 47UL +
+            sum_donors * 73UL +
+            sum_acceptors * 101UL)
+            % table_size;
+    
+    return hash;
+}
+
+int isoforms_are_identical(Isoform *iso1, Isoform *iso2) {
+    if (iso1->n_introns != iso2->n_introns) {
+        return 0;
+    }    
+    if (iso1->n_introns == 0) {
+        return 1;
+    }
+    for (int i = 0; i < iso1->n_introns; i++) {
+        if (iso1->dons[i] != iso2->dons[i] || 
+            iso1->accs[i] != iso2->accs[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso) {
+    if (!table || !new_iso) return 0;
+    
+    unsigned long hash = compute_isoform_hash(new_iso, table->size);
+    HashNode *current = table->buckets[hash];
+    
+    // Walk the chain at this bucket
+    while (current != NULL) {
+        if (isoforms_are_identical(current->isoform, new_iso)) {
+            return 1;  // Found duplicate
+        }
+        current = current->next;
+    }
+    
+    return 0;  // No duplicate found
+}
+
+void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso) {
+    if (!table || !iso) return;
+    
+    unsigned long hash = compute_isoform_hash(iso, table->size);
+    
+    // Create new node
+    HashNode *new_node = malloc(sizeof(HashNode));
+    new_node->isoform = iso;
+    new_node->next = table->buckets[hash];
+    
+    // Insert at head of chain
+    table->buckets[hash] = new_node;
+    table->count++;
+}
+
 /* --------------- Initialize Random Forest--------------- */
 
 RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
@@ -17,6 +113,7 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
         rf->min_samples_split = 1;
         rf->all_sites = NULL;
         rf->gini_threshold = 0.1;
+        rf->hash_table = create_hash_table(HASH_TABLE_SIZE);
         return rf;
     }
     
@@ -44,6 +141,9 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
         rf->min_samples_split = 2;
     }
     rf->gini_threshold = 0.1;
+    
+    // Initialize hash table for duplicate checking
+    rf->hash_table = create_hash_table(HASH_TABLE_SIZE);
 
     srand(time(NULL));
     return rf;
@@ -194,7 +294,8 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
 
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
-                      Vitbi_algo *vit, int use_path_restriction) {
+                      Vitbi_algo *vit, int use_path_restriction, 
+                      IsoformHashTable *hash_table) {
     
     // Safety check
     if (n_sites <= 0 || sites == NULL) {
@@ -259,12 +360,18 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
             single_viterbi_algo(&subset_pos, info, ed, vit, l, loc);
         }
         
-        // Remove Duplicate Isoform
+        // Check if a new isoform was added and if it's a duplicate
         if (loc->n_isoforms > prev_count) {
             Isoform *new_iso = loc->isoforms[loc->n_isoforms - 1];
-            if (isoform_exists(loc, new_iso)) {
+            
+            // Check using hash table for efficiency
+            if (isoform_exists_in_hash(hash_table, new_iso)) {
+                // It's a duplicate, remove it
                 free_isoform(new_iso);
                 loc->n_isoforms--;
+            } else {
+                // It's unique, add to hash table
+                insert_isoform_to_hash(hash_table, new_iso);
             }
         }
     }
@@ -294,7 +401,8 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
     
     // Check stopping criteria
     if (n_sites < rf->min_samples_split) {
-        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, use_path_restriction);
+        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
+                         use_path_restriction, rf->hash_table);
         return;
     }
     
@@ -302,7 +410,8 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
     double threshold;
     if (!find_best_split(sites, n_sites, &threshold, rf->min_samples_split, rf->gini_threshold)) {
         // run viterbi if can't continue
-        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, use_path_restriction);
+        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
+                         use_path_restriction, rf->hash_table);
         return;
     }
     
@@ -369,22 +478,14 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
     }
 }
 
-/* --------------- Duplicate Check --------------- */
+/* --------------- Duplicate Check (Legacy - kept for compatibility) --------------- */
 
 int isoform_exists(Locus *loc, Isoform *new_iso) {
     for (int i = 0; i < loc->n_isoforms - 1; i++) {
         Isoform *iso = loc->isoforms[i];
-        if (iso->n_introns != new_iso->n_introns) continue;
-        
-        int match = 1;
-        for (int j = 0; j < iso->n_introns; j++) {
-            if (iso->dons[j] != new_iso->dons[j] || 
-                iso->accs[j] != new_iso->accs[j]) {
-                match = 0;
-                break;
-            }
+        if (isoforms_are_identical(iso, new_iso)) {
+            return 1;
         }
-        if (match) return 1;
     }
     return 0;
 }
@@ -395,6 +496,9 @@ void free_random_forest(RandomForest *rf) {
     if (rf) {
         if (rf->all_sites) {
             free(rf->all_sites);
+        }
+        if (rf->hash_table) {
+            free_hash_table(rf->hash_table);
         }
         free(rf);
     }

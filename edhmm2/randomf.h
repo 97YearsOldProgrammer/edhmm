@@ -7,7 +7,12 @@
 #include <string.h>
 #include <time.h>
 
-/* --------------- Data Structure --------------- */
+/* --------------- Hash Table Configuration --------------- */
+#define HASH_TABLE_SIZE 10007
+
+/* ---------------------------------------------------- */
+/* ------------------ Data Structure ------------------ */
+/* ---------------------------------------------------- */
 
 typedef struct {
     int     pos;
@@ -15,12 +20,25 @@ typedef struct {
     double  val;
 } SpliceSite;
 
+/* --------------- Hash Table Structures --------------- */
+typedef struct HashNode {
+    Isoform *isoform;           // Pointer to the actual isoform
+    struct HashNode *next;      // For collision chaining
+} HashNode;
+
+typedef struct {
+    HashNode **buckets;         // Array of bucket heads
+    int size;                   // Number of buckets
+    int count;                  // Number of stored isoforms
+} IsoformHashTable;
+
 typedef struct {
     SpliceSite  *all_sites;
     int         n_sites;
     int         min_samples_split;
     int         mtry;
     double      gini_threshold;
+    IsoformHashTable *hash_table;  // Add hash table for duplicate checking
 } RandomForest;
 
 /* ---------------------------------------------------- */
@@ -30,6 +48,13 @@ typedef struct {
 /* --------------- Random Forest Data Structure --------------- */
 RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff);
 void free_random_forest(RandomForest *rf);
+
+/* --------------- Hash Table Functions --------------- */
+IsoformHashTable* create_hash_table(int size);
+void free_hash_table(IsoformHashTable *table);
+unsigned long compute_isoform_hash(Isoform *iso, int table_size);
+int isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso);
+void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso);
 
 /* --------------- Splitting Function --------------- */
 static SpliceSite*  bootstrap_sample(SpliceSite *sites, int n_sites);
@@ -42,7 +67,7 @@ static int          find_best_split(SpliceSite *sites, int n_sites, double *best
 /* --------------- Viterbi On Decision Tree Splitting Criteria --------------- */
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
-                      Vitbi_algo *vit, int use_path_restriction);
+                      Vitbi_algo *vit, int use_path_restriction, IsoformHashTable *hash_table);
 
 void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Observed_events *info, Explicit_duration *ed, 
@@ -50,6 +75,7 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              int use_path_restriction);
 
 int isoform_exists(Locus *loc, Isoform *new_iso);
+int isoforms_are_identical(Isoform *iso1, Isoform *iso2);
 
 /* --------------- Viterbi On Random Forest --------------- */
 void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
