@@ -90,23 +90,6 @@ typedef struct {
     double intron;
 } Vitbi_algo;
 
-/* --------------- Isoform Data Structure --------------- */
-
-typedef struct {
-    int     beg;                // isoform begin position
-    int     end;                // isoform end position
-    int     *dons;              // donor site positions
-    int     *accs;              // acceptor site positions
-    int     n_introns;          // number of introns
-    double  val;
-} Isoform;
-
-typedef struct {
-    Isoform **isoforms;     // array of isoform pointers
-    int n_isoforms;         // number of isoforms
-    int capacity;           // capacity for isoforms array
-} Locus;
-
 /* ---------------------------------------------------- */
 /* --------------- Function Declaration --------------- */
 /* ---------------------------------------------------- */
@@ -172,11 +155,5 @@ void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration
 void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
                              Vitbi_algo *vit, Lambda *l, Locus *loc);
 void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
-
-/* --------------- Locus Class --------------- */
-Locus* create_locus(int initial_capacity);
-Isoform* create_isoform(int beg, int end);
-void free_isoform(Isoform *iso);
-void free_locus(Locus *loc);
 
 #endif

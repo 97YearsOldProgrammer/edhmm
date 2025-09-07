@@ -7,7 +7,22 @@
 #include <string.h>
 #include <time.h>
 
-/* --------------- Data Structure --------------- */
+/* --------------- Isoform Data Structure --------------- */
+
+typedef struct {
+    int     beg;                // isoform begin position
+    int     end;                // isoform end position
+    int     *dons;              // donor site positions
+    int     *accs;              // acceptor site positions
+    int     n_introns;          // number of introns
+    double  val;
+} Isoform;
+
+typedef struct {
+    Isoform **isoforms;     // array of isoform pointers
+    int n_isoforms;         // number of isoforms
+    int capacity;           // capacity for isoforms array
+} Locus;
 
 typedef struct {
     int     pos;
@@ -16,7 +31,6 @@ typedef struct {
 } SpliceSite;
 
 /* --------------- Hash Table Structures --------------- */
-#define HASH_TABLE_SIZE 10007  // Prime number for better distribution
 
 typedef struct HashNode {
     Isoform *isoform;           // Pointer to the actual isoform
@@ -30,17 +44,22 @@ typedef struct {
 } IsoformHashTable;
 
 typedef struct {
+    int         sample_size;        // Number of observations that are drawn for each tree
+    int         node_size;          // Minimum number of observations in a terminal node
+    int         mtry;               // Number of drawn candidate variables in each split
     SpliceSite  *all_sites;
-    int         n_sites;
-    int         min_samples_split;
-    int         mtry;
-    double      gini_threshold;
-    IsoformHashTable *hash_table;  // Add hash table for duplicate checking
-} RandomForest;
+    IsoformHashTable *hash_table;
+} RandomForest;                     // Replacement: True
 
 /* ---------------------------------------------------- */
 /* --------------- Function Declaration --------------- */
 /* ---------------------------------------------------- */
+
+/* --------------- Locus Class --------------- */
+Locus* create_locus(int capacity);
+Isoform* create_isoform(int beg, int end);
+void free_isoform(Isoform *iso);
+void free_locus(Locus *loc);
 
 /* --------------- Random Forest Data Structure --------------- */
 RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff);

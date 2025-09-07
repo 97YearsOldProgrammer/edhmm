@@ -1,16 +1,36 @@
-#include "model.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "model.h"
+#include "randomf.h"
+
+/* --------------- HMM Hints Output --------------- */
+
+void print_splice_sites(Pos_prob *pos, Observed_events *info) {
+    int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
+    printf("DONS\n");
+    for (int i = FLANK; i < info->T-FLANK; i++) {
+        if (pos->xi[i][0] != 0.0) {
+            printf("%d\t%.10f\n", i, pos->xi[i][0]);
+        }
+    }
+    printf("ACCS\n");
+    for (int i = FLANK; i < info->T-FLANK; i++) {
+        if (pos->xi[i][1] != 0.0) {  
+            printf("%d\t%.10f\n", i, pos->xi[i][1]);
+        }
+    }
+}
+
 /* --------------- Locus Class --------------- */
 
-Locus* create_locus(int initial_capacity) {
-    Locus *loc = malloc(sizeof(Locus));
-    loc->capacity = initial_capacity;
+Locus* create_locus(int capacity) {
+    Locus *loc      = malloc(sizeof(Locus));
+    loc->capacity   = capacity;
     loc->n_isoforms = 0;
-    loc->isoforms = malloc(loc->capacity * sizeof(Isoform*));
+    loc->isoforms   = malloc(loc->capacity * sizeof(Isoform*));
     for (int i = 0; i < loc->capacity; i++) {
         loc->isoforms[i] = NULL;
     }
@@ -18,12 +38,12 @@ Locus* create_locus(int initial_capacity) {
 }
 
 Isoform* create_isoform(int beg, int end) {
-    Isoform *iso = malloc(sizeof(Isoform));
-    iso->beg = beg;
-    iso->end = end;
-    iso->dons = NULL;
-    iso->accs = NULL;
-    iso->n_introns = 0;
+    Isoform *iso    = malloc(sizeof(Isoform));
+    iso->beg        = beg;
+    iso->end        = end;
+    iso->dons       = NULL;
+    iso->accs       = NULL;
+    iso->n_introns  = 0;
     return iso;
 }
 
@@ -42,24 +62,6 @@ void free_locus(Locus *loc) {
         }
         free(loc->isoforms);
         free(loc);
-    }
-}
-
-/* --------------- HMM Hints Output --------------- */
-
-void print_splice_sites(Pos_prob *pos, Observed_events *info) {
-    int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
-    printf("DONS\n");
-    for (int i = FLANK; i < info->T-FLANK; i++) {
-        if (pos->xi[i][0] != 0.0) {
-            printf("%d\t%.10f\n", i, pos->xi[i][0]);
-        }
-    }
-    printf("ACCS\n");
-    for (int i = FLANK; i < info->T-FLANK; i++) {
-        if (pos->xi[i][1] != 0.0) {  
-            printf("%d\t%.10f\n", i, pos->xi[i][1]);
-        }
     }
 }
 

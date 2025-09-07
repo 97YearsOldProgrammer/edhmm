@@ -158,14 +158,14 @@ void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso) {
 
 /* --------------- Initialize Random Forest--------------- */
 
-RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
+RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size) {
     RandomForest *rf = malloc(sizeof(RandomForest));
     
-    int total_sites = pos->dons + pos->accs;
-    rf->all_sites   = malloc(total_sites * sizeof(SpliceSite));
-    rf->n_sites     = total_sites;
-
-    // Build original dataset
+    rf->sample_size         = pos->dons+pos->accs;
+    rf->all_sites           = malloc(rf->sample_size * sizeof(SpliceSite));
+    rf->node_size           = node_size;
+    rf->hash_table          = create_hash_table(compute_hash_table_size(loc->capacity));
+    // Append original dataset
     int idx = 0;
     for (int i = 0; i < pos->dons; i++) {
         rf->all_sites[idx].pos = pos->dons_bps[i];
@@ -179,23 +179,16 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
         rf->all_sites[idx].val = pos->accs_val[i];
         idx++;
     }
-    
-    rf->min_samples_split   = (int)(total_sites * min_sample_coeff);
-    rf->gini_threshold      = 0.1;    
-    rf->hash_table          = create_hash_table(HASH_TABLE_SIZE);
-
     srand(time(NULL));
     return rf;
 }
 
 /* --------------- Bootstrap Sampling --------------- */
-
+// Replacement True
 static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
-    // Add safety check
     if (n_sites <= 0 || sites == NULL) {
         return NULL;
     }
-    
     SpliceSite *sample = malloc(n_sites * sizeof(SpliceSite));
     for (int i = 0; i < n_sites; i++) {
         sample[i] = sites[rand() % n_sites];
@@ -240,32 +233,20 @@ static double compute_gini(SpliceSite *sites, int n_sites) {
 static int compare_sites_by_val(const void *a, const void *b) {
     SpliceSite *sa = (SpliceSite*)a;
     SpliceSite *sb = (SpliceSite*)b;
-    if (sa->val < sb->val)      return -1;
+    if      (sa->val < sb->val) return -1;
     else if (sa->val > sb->val) return 1;
     else return 0;
 }
 
-static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
-                    int min_samples, double gini_threshold) {
-    
-    // Add boundary check
-    if (n_sites <= 1 || sites == NULL) {
-        return 0;  // Can't split with 0 or 1 site
+static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
+                     int node_size, int mtry) {
+
+    if (n_sites <= node_size || sites == NULL) {
+        return 0;
     }
     
-    // default mtry = 1/3
-    int subset_size = n_sites / 3;
-    if (subset_size < 2) subset_size = 2;
-    
-    // Ensure subset_size doesn't exceed n_sites
-    if (subset_size > n_sites) {
-        subset_size = n_sites;
-    }
-    
-    SpliceSite *subset = malloc(subset_size * sizeof(SpliceSite));
-    if (!subset) {
-        return 0;  // Allocation failed
-    }
+    int subset_size     = n_sites * mtry;
+    SpliceSite *subset  = malloc(subset_size * sizeof(SpliceSite));
     
     for (int i = 0; i < subset_size; i++) {
         subset[i] = sites[rand() % n_sites];
@@ -281,43 +262,40 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
     for (int i = 1; i < subset_size; i++) {
         double threshold = subset[i].val;
         
-        // Split the full dataset using this threshold
         int left_count = 0, right_count = 0;
         for (int j = 0; j < n_sites; j++) {
             if (sites[j].val < threshold) left_count++;
             else right_count++;
         }
         
-        // Check minimum samples constraint
-        if (left_count < min_samples || right_count < min_samples) continue;
-        
-        // Calculate MSE gain for subset
+        if (left_count < node_size || right_count < node_size) continue;
+
+        // check mse gain
         double left_mse     = compute_mse(subset, i);
         double right_mse    = compute_mse(&subset[i], subset_size - i);
         double gain         = parent_mse - left_mse - right_mse;
-        
-        // Check gini impurity
-        SpliceSite *temp_left   = malloc(left_count * sizeof(SpliceSite));
+
+        // make split
+        SpliceSite *temp_left   = malloc(left_count  * sizeof(SpliceSite));
         SpliceSite *temp_right  = malloc(right_count * sizeof(SpliceSite));
         
         int l_idx = 0, r_idx = 0;
         for (int j = 0; j < n_sites; j++) {
             if (sites[j].val < threshold) {
-                temp_left[l_idx++] = sites[j];
+                temp_left[l_idx++]  = sites[j];
             } else {
                 temp_right[r_idx++] = sites[j];
             }
         }
-        
-        double left_gini    = compute_gini(temp_left, left_count);
+        // check gini impurity
+        double left_gini    = compute_gini(temp_left,  left_count);
         double right_gini   = compute_gini(temp_right, right_count);
         
         free(temp_left);
         free(temp_right);
         
-        // Skip if Gini is too low (too pure)
-        if (left_gini < gini_threshold || right_gini < gini_threshold) continue;
-        
+        if (left_gini == 0.0 || right_gini == 0.0) continue;
+
         if (gain > max_gain) {
             max_gain = gain;
             *best_threshold = threshold;
@@ -333,31 +311,26 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
 
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
-                      Vitbi_algo *vit, int use_path_restriction, 
+                      Vitbi_algo *vit, int use_path_restriction, int node_size,
                       IsoformHashTable *hash_table) {
     
-    // Safety check
-    if (n_sites <= 0 || sites == NULL) {
+    if (n_sites <= node_size || sites == NULL) {
         return;
     }
     
-    // Create subset
     Pos_prob subset_pos;
     int n_dons = 0, n_accs = 0;
     
-    // Count donors and acceptors
     for (int i = 0; i < n_sites; i++) {
         if (sites[i].typ == 0) n_dons++;
         else n_accs++;
     }
     
-    // Allocate arrays
     subset_pos.dons_bps = malloc(n_dons * sizeof(int));
     subset_pos.dons_val = malloc(n_dons * sizeof(double));
     subset_pos.accs_bps = malloc(n_accs * sizeof(int));
     subset_pos.accs_val = malloc(n_accs * sizeof(double));
     
-    // Fill arrays
     int d_idx = 0, a_idx = 0;
     for (int i = 0; i < n_sites; i++) {
         if (sites[i].typ == 0) {
@@ -374,7 +347,6 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
     subset_pos.dons = n_dons;
     subset_pos.accs = n_accs;
     
-    // Allocate xi array for Viterbi
     int T = info->T;
     subset_pos.xi = malloc(T * sizeof(double*));
     for (int i = 0; i < T; i++) {
@@ -388,34 +360,25 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
         subset_pos.xi[subset_pos.accs_bps[i]][1] = subset_pos.accs_val[i];
     }
     
-    // Run Viterbi
-    if (n_dons > 0 && n_accs > 0) {
-        // Save current isoform count to check if new one was added
-        int prev_count = loc->n_isoforms;
+    int prev_count = loc->n_isoforms;
         
-        if (use_path_restriction) {
-            path_restricted_viterbi(&subset_pos, info, ed, vit, l, loc);
+    if (use_path_restriction) {
+        path_restricted_viterbi(&subset_pos, info, ed, vit, l, loc);
+    } else {
+        single_viterbi_algo(&subset_pos, info, ed, vit, l, loc);
+    }
+        
+    if (loc->n_isoforms > prev_count) {
+        Isoform *new_iso = loc->isoforms[loc->n_isoforms - 1];
+        // run hash table
+        if (isoform_exists_in_hash(hash_table, new_iso)) {
+            free_isoform(new_iso);
+            loc->n_isoforms--;
         } else {
-            single_viterbi_algo(&subset_pos, info, ed, vit, l, loc);
-        }
-        
-        // Check if a new isoform was added and if it's a duplicate
-        if (loc->n_isoforms > prev_count) {
-            Isoform *new_iso = loc->isoforms[loc->n_isoforms - 1];
-            
-            // Check using hash table for efficiency
-            if (isoform_exists_in_hash(hash_table, new_iso)) {
-                // It's a duplicate, remove it
-                free_isoform(new_iso);
-                loc->n_isoforms--;
-            } else {
-                // It's unique, add to hash table
-                insert_isoform_to_hash(hash_table, new_iso);
-            }
+            insert_isoform_to_hash(hash_table, new_iso);
         }
     }
-    
-    // Cleanup
+    // clean up shit
     free(subset_pos.dons_bps);
     free(subset_pos.dons_val);
     free(subset_pos.accs_bps);
@@ -439,7 +402,7 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
     }
     
     // Check stopping criteria
-    if (n_sites < rf->min_samples_split) {
+    if (n_sites < rf->node_size) {
         viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
                          use_path_restriction, rf->hash_table);
         return;
@@ -447,7 +410,7 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
     
     // find best split
     double threshold;
-    if (!find_best_split(sites, n_sites, &threshold, rf->min_samples_split, rf->gini_threshold)) {
+    if (!find_best_split(sites, n_sites, &threshold, rf->node_size, 1/3)) {
         // run viterbi if can't continue
         viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
                          use_path_restriction, rf->hash_table);
