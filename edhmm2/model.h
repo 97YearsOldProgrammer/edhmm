@@ -9,8 +9,9 @@ extern int  use_random_forest;
 extern int  n_isoforms;
 extern int  use_path_restriction;
 
-/* --------------- Computation Data Structure --------------- */
-
+/* ---------------------------------------------------- */
+/* ----------- Computation Data Structure ------------- */
+/* ---------------------------------------------------- */
 typedef struct
 {
     char *original_sequence;            // org seq

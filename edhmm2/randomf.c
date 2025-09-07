@@ -1,16 +1,75 @@
 #include "stdio.h"
 #include "stdlib.h"
+#include "stdbool.h"
+#include "math.h"
+#include "string.h"
 
 #include "randomf.h"
 #include "model.h"
+
+/* --------------- Hash Table Size Function --------------- */
+// using 6k±1 property of finding prime number next to 0.8 load size
+
+static bool is_prime(int n) {
+    if (n <= 1) return false;
+    if (n <= 3) return true;
+    if (n % 2 == 0 || n % 3 == 0) return false;
+    
+    for (int i = 5; i * i <= n; i += 6) {
+        if (n % i == 0 || n % (i + 2) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int next_prime(int n) {
+    if (n <= 2) return 2;
+    if (n <= 3) return 3;    
+    if (n % 2 == 0) n++;
+
+    while (!is_prime(n)) {
+        n += 2;
+    }
+    return n;
+}
+
+int next_prime_optimized(int n) {
+    if (n <= 2) return 2;
+    if (n <= 3) return 3;
+    if (n <= 5) return 5;
+    
+    int remainder = n % 6;
+    if (remainder <= 1) {
+        int candidate = n - remainder + (remainder == 0 ? 5 : -1);
+        if (candidate >= n && is_prime(candidate)) return candidate;
+        candidate += 2;
+        if (is_prime(candidate)) return candidate;
+    } else if (remainder <= 5) {
+        int candidate = n - remainder + (remainder <= 1 ? 1 : (remainder <= 5 ? 1 : 5));
+        if (remainder > 1) candidate = n - remainder + 1;
+        if (candidate < n) candidate += 6;
+        
+        while (!is_prime(candidate)) {
+            candidate += (candidate % 6 == 1) ? 4 : 2;
+        }
+        return candidate;
+    }
+    return next_prime(n);
+}
+
+int compute_hash_table_size(int locus_size) {
+    int min_size = (int)ceil((double)locus_size / 0.8);    
+    return next_prime_optimized(min_size);
+}
 
 /* --------------- Hash Table Functions --------------- */
 
 IsoformHashTable* create_hash_table(int size) {
     IsoformHashTable *table = malloc(sizeof(IsoformHashTable));
-    table->size             = size;
-    table->count            = 0;
-    table->buckets          = calloc(size, sizeof(HashNode*));
+    table->size     = size;
+    table->count    = 0;
+    table->buckets  = calloc(size, sizeof(HashNode*));
     return table;
 }
 
@@ -34,13 +93,13 @@ unsigned long compute_isoform_hash(Isoform *iso, int table_size) {
         return 0;
     }
     
-    unsigned long hash          = 0;
-    unsigned long sum_donors    = 0;
+    unsigned long hash = 0;
+    unsigned long sum_donors = 0;
     unsigned long sum_acceptors = 0;
     
     for (int i = 0; i < iso->n_introns; i++) {
-        sum_donors      += iso->dons[i];
-        sum_acceptors   += iso->accs[i];
+        sum_donors += iso->dons[i];
+        sum_acceptors += iso->accs[i];
     }
     
     hash = (iso->n_introns * 31UL +
@@ -55,10 +114,12 @@ unsigned long compute_isoform_hash(Isoform *iso, int table_size) {
 int isoforms_are_identical(Isoform *iso1, Isoform *iso2) {
     if (iso1->n_introns != iso2->n_introns) {
         return 0;
-    }    
+    }
+
     if (iso1->n_introns == 0) {
         return 1;
     }
+
     for (int i = 0; i < iso1->n_introns; i++) {
         if (iso1->dons[i] != iso2->dons[i] || 
             iso1->accs[i] != iso2->accs[i]) {
@@ -72,30 +133,25 @@ int isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso) {
     if (!table || !new_iso) return 0;
     
     unsigned long hash = compute_isoform_hash(new_iso, table->size);
-    HashNode *current = table->buckets[hash];
-    
-    // Walk the chain at this bucket
+    HashNode *current = table->buckets[hash];    
     while (current != NULL) {
         if (isoforms_are_identical(current->isoform, new_iso)) {
-            return 1;  // Found duplicate
+            return 1;
         }
         current = current->next;
     }
     
-    return 0;  // No duplicate found
+    return 0;
 }
 
 void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso) {
     if (!table || !iso) return;
     
-    unsigned long hash = compute_isoform_hash(iso, table->size);
-    
-    // Create new node
-    HashNode *new_node = malloc(sizeof(HashNode));
-    new_node->isoform = iso;
-    new_node->next = table->buckets[hash];
-    
-    // Insert at head of chain
+    unsigned long hash  = compute_isoform_hash(iso, table->size);
+    HashNode *new_node  = malloc(sizeof(HashNode));
+    new_node->isoform   = iso;
+    new_node->next      = table->buckets[hash];
+    // add to head
     table->buckets[hash] = new_node;
     table->count++;
 }
@@ -106,20 +162,9 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
     RandomForest *rf = malloc(sizeof(RandomForest));
     
     int total_sites = pos->dons + pos->accs;
-    
-    // Add validation for empty dataset
-    if (total_sites <= 0) {
-        rf->n_sites = 0;
-        rf->min_samples_split = 1;
-        rf->all_sites = NULL;
-        rf->gini_threshold = 0.1;
-        rf->hash_table = create_hash_table(HASH_TABLE_SIZE);
-        return rf;
-    }
-    
-    rf->all_sites = malloc(total_sites * sizeof(SpliceSite));
-    rf->n_sites = total_sites;
-    
+    rf->all_sites   = malloc(total_sites * sizeof(SpliceSite));
+    rf->n_sites     = total_sites;
+
     // Build original dataset
     int idx = 0;
     for (int i = 0; i < pos->dons; i++) {
@@ -135,15 +180,9 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff) {
         idx++;
     }
     
-    // Ensure min_samples_split is at least 2
-    rf->min_samples_split = (int)(total_sites * min_sample_coeff);
-    if (rf->min_samples_split < 2) {
-        rf->min_samples_split = 2;
-    }
-    rf->gini_threshold = 0.1;
-    
-    // Initialize hash table for duplicate checking
-    rf->hash_table = create_hash_table(HASH_TABLE_SIZE);
+    rf->min_samples_split   = (int)(total_sites * min_sample_coeff);
+    rf->gini_threshold      = 0.1;    
+    rf->hash_table          = create_hash_table(HASH_TABLE_SIZE);
 
     srand(time(NULL));
     return rf;
@@ -492,12 +531,49 @@ int isoform_exists(Locus *loc, Isoform *new_iso) {
 
 /* --------------- Cleanup --------------- */
 
+void print_hash_table_stats(IsoformHashTable *table) {
+    if (!table) return;
+    
+    int used_buckets = 0;
+    int max_chain_length = 0;
+    int total_chain_length = 0;
+    
+    for (int i = 0; i < table->size; i++) {
+        if (table->buckets[i] != NULL) {
+            used_buckets++;
+            int chain_length = 0;
+            HashNode *current = table->buckets[i];
+            while (current) {
+                chain_length++;
+                current = current->next;
+            }
+            total_chain_length += chain_length;
+            if (chain_length > max_chain_length) {
+                max_chain_length = chain_length;
+            }
+        }
+    }
+    
+    printf("Hash Table Statistics:\n");
+    printf("  Table size: %d\n", table->size);
+    printf("  Total items: %d\n", table->count);
+    printf("  Load factor: %.2f\n", (double)table->count / table->size);
+    printf("  Used buckets: %d (%.1f%%)\n", used_buckets, 
+           100.0 * used_buckets / table->size);
+    printf("  Max chain length: %d\n", max_chain_length);
+    printf("  Avg chain length: %.2f\n", 
+           used_buckets > 0 ? (double)total_chain_length / used_buckets : 0.0);
+}
+
 void free_random_forest(RandomForest *rf) {
     if (rf) {
         if (rf->all_sites) {
             free(rf->all_sites);
         }
         if (rf->hash_table) {
+            if (DEBUG) {
+                print_hash_table_stats(rf->hash_table);
+            }
             free_hash_table(rf->hash_table);
         }
         free(rf);

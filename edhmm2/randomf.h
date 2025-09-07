@@ -7,12 +7,7 @@
 #include <string.h>
 #include <time.h>
 
-/* --------------- Hash Table Configuration --------------- */
-#define HASH_TABLE_SIZE 10007
-
-/* ---------------------------------------------------- */
-/* ------------------ Data Structure ------------------ */
-/* ---------------------------------------------------- */
+/* --------------- Data Structure --------------- */
 
 typedef struct {
     int     pos;
@@ -21,6 +16,8 @@ typedef struct {
 } SpliceSite;
 
 /* --------------- Hash Table Structures --------------- */
+#define HASH_TABLE_SIZE 10007  // Prime number for better distribution
+
 typedef struct HashNode {
     Isoform *isoform;           // Pointer to the actual isoform
     struct HashNode *next;      // For collision chaining
@@ -50,11 +47,13 @@ RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff);
 void free_random_forest(RandomForest *rf);
 
 /* --------------- Hash Table Functions --------------- */
+unsigned long   compute_isoform_hash(Isoform *iso, int table_size);
+int             isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso);
+void            insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso);
+
 IsoformHashTable* create_hash_table(int size);
 void free_hash_table(IsoformHashTable *table);
-unsigned long compute_isoform_hash(Isoform *iso, int table_size);
-int isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso);
-void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso);
+void print_hash_table_stats(IsoformHashTable *table);
 
 /* --------------- Splitting Function --------------- */
 static SpliceSite*  bootstrap_sample(SpliceSite *sites, int n_sites);

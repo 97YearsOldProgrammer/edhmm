@@ -163,17 +163,25 @@ void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso) {
             temp_accs[n_accs++] = t;
         }
     }
+    
+    // Set the number of introns
     iso->n_introns = n_dons;
 
+    // BUG FIX: Only allocate and fill arrays if there are introns
     if (n_dons > 0) {
         iso->dons = malloc(n_dons * sizeof(int));
-        iso->accs = malloc(n_accs * sizeof(int));
+        iso->accs = malloc(n_accs * sizeof(int));  // Note: n_accs should equal n_dons
+        
         for (int i = 0; i < n_dons; i++) {
             iso->dons[i] = temp_dons[i];
         }
         for (int i = 0; i < n_accs; i++) {
             iso->accs[i] = temp_accs[i];
         }
+    } else {
+        // No introns found - set pointers to NULL
+        iso->dons = NULL;
+        iso->accs = NULL;
     }
     
     free(temp_dons);
