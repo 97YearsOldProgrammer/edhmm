@@ -241,7 +241,7 @@ static int compare_sites_by_val(const void *a, const void *b) {
 static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
                      int node_size, int mtry) {
 
-    if (n_sites <= node_size || sites == NULL) {
+    if (n_sites < node_size*2 || sites == NULL) {
         return 0;
     }
     
@@ -307,7 +307,7 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
     return found_split;
 }
 
-/* --------------- Viterbi on Subset --------------- */
+/* --------------- Viterbi Algorithm --------------- */
 
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
@@ -370,7 +370,7 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
         
     if (loc->n_isoforms > prev_count) {
         Isoform *new_iso = loc->isoforms[loc->n_isoforms - 1];
-        // run hash table
+        // insert into hash table
         if (isoform_exists_in_hash(hash_table, new_iso)) {
             free_isoform(new_iso);
             loc->n_isoforms--;
@@ -396,24 +396,14 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction) {
     
-    // Add safety check at the beginning
-    if (n_sites <= 0 || sites == NULL) {
-        return;  // Nothing to process
-    }
-    
-    // Check stopping criteria
-    if (n_sites < rf->node_size) {
+    if (n_sites >= rf->node_size) {
         viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
-                         use_path_restriction, rf->hash_table);
-        return;
+                         use_path_restriction, rf->node_size, rf->hash_table);
     }
     
     // find best split
     double threshold;
-    if (!find_best_split(sites, n_sites, &threshold, rf->node_size, 1/3)) {
-        // run viterbi if can't continue
-        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
-                         use_path_restriction, rf->hash_table);
+    if (!find_best_split(sites, n_sites, &threshold, rf->node_size, rf->mtry)) {
         return;
     }
     
@@ -451,28 +441,17 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Locus *loc, Vitbi_algo *vit,
                                      int use_path_restriction) {
     
-    // Add check for empty dataset
-    if (rf->n_sites <= 0 || rf->all_sites == NULL) {
-        if (DEBUG) printf("No splice sites available for Random Forest\n");
-        return;
-    }
     
     while (loc->n_isoforms < loc->capacity) {        
         // bootstrap
-        SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->n_sites);
-        
-        // Check if bootstrap was successful
-        if (bootstrap == NULL) {
-            if (DEBUG) printf("Bootstrap sampling failed\n");
-            break;
-        }
-        
+        SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->sample_size);
+                
         // build tree and collect isoform
-        build_tree_with_viterbi(bootstrap, rf->n_sites, rf, info, ed, l, 
+        build_tree_with_viterbi(bootstrap, rf->sample_size, rf, info, ed, l, 
                                loc, vit, use_path_restriction);
         free(bootstrap);
         
-        // terminate
+        // Termination
         if (loc->n_isoforms >= loc->capacity) {
             if (DEBUG) printf("Reached isoform capacity (%d)\n", loc->capacity);
             break;
@@ -480,19 +459,22 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
     }
 }
 
-/* --------------- Duplicate Check (Legacy - kept for compatibility) --------------- */
-
-int isoform_exists(Locus *loc, Isoform *new_iso) {
-    for (int i = 0; i < loc->n_isoforms - 1; i++) {
-        Isoform *iso = loc->isoforms[i];
-        if (isoforms_are_identical(iso, new_iso)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* --------------- Cleanup --------------- */
+
+void free_random_forest(RandomForest *rf) {
+    if (rf) {
+        if (rf->all_sites) {
+            free(rf->all_sites);
+        }
+        if (rf->hash_table) {
+            if (DEBUG) {
+                print_hash_table_stats(rf->hash_table);
+            }
+            free_hash_table(rf->hash_table);
+        }
+        free(rf);
+    }
+}
 
 void print_hash_table_stats(IsoformHashTable *table) {
     if (!table) return;
@@ -526,19 +508,4 @@ void print_hash_table_stats(IsoformHashTable *table) {
     printf("  Max chain length: %d\n", max_chain_length);
     printf("  Avg chain length: %.2f\n", 
            used_buckets > 0 ? (double)total_chain_length / used_buckets : 0.0);
-}
-
-void free_random_forest(RandomForest *rf) {
-    if (rf) {
-        if (rf->all_sites) {
-            free(rf->all_sites);
-        }
-        if (rf->hash_table) {
-            if (DEBUG) {
-                print_hash_table_stats(rf->hash_table);
-            }
-            free_hash_table(rf->hash_table);
-        }
-        free(rf);
-    }
 }

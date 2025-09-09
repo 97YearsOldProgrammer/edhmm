@@ -62,7 +62,7 @@ void free_isoform(Isoform *iso);
 void free_locus(Locus *loc);
 
 /* --------------- Random Forest Data Structure --------------- */
-RandomForest* create_random_forest(Pos_prob *pos, double min_sample_coeff);
+RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size);
 void free_random_forest(RandomForest *rf);
 
 /* --------------- Hash Table Functions --------------- */
@@ -79,8 +79,8 @@ static SpliceSite*  bootstrap_sample(SpliceSite *sites, int n_sites);
 static double       compute_mse(SpliceSite *sites, int n_sites);
 static double       compute_gini(SpliceSite *sites, int n_sites);
 static int          compare_sites_by_val(const void *a, const void *b);
-static int          find_best_split(SpliceSite *sites, int n_sites, double *best_threshold, 
-                        int min_samples, double gini_threshold);
+static int          find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
+                                    int node_size, int mtry) ;
 
 /* --------------- Viterbi On Decision Tree Splitting Criteria --------------- */
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
@@ -92,7 +92,6 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction);
 
-int isoform_exists(Locus *loc, Isoform *new_iso);
 int isoforms_are_identical(Isoform *iso1, Isoform *iso2);
 
 /* --------------- Viterbi On Random Forest --------------- */
