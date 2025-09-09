@@ -95,11 +95,6 @@ typedef struct {
 /* ---------------------------------------------------- */
 
 /* --------------- Input Parser --------------- */
-static int  count_lines(const char *filename, int skip_header);
-static int  detect_kmer_length(const char *filename);
-static void initialize_donor_transition_matrix_recursive(Lambda *l, int depth);
-static void initialize_acceptor_transition_matrix_recursive(Lambda *l, int depth);
-
 void read_sequence_file(const char *filename, Observed_events *info);
 void numerical_transcription(Observed_events *info, const char *seq);
 void donor_parser(Lambda *l, char *filename);
@@ -113,13 +108,11 @@ void free_explicit_duration(Explicit_duration *ed);
 
 /* --------------- Computation Functions --------------- */
 int    power(int base, int exp);
-int     base4_to_int(int *array, int beg, int length);
+int    base4_to_int(int *array, int beg, int length);
 double total_prob(double *array, int length);
 double log_sum_exp(double *logs, int n);
 void   tolerance_checker(double *array, int len, const double epsilon);
 void   log_space_converter(double *array, int len);
-
-static double log_sum_sub(double val, double add, double sub);
 
 /* --------------- Forward Algorithm --------------- */
 void allocate_fw(Observed_events *info, Forward_algorithm *alpha, Explicit_duration *ed);
@@ -137,23 +130,17 @@ void free_beta(Observed_events *info, Backward_algorithm *beta);
 void allocate_pos(Pos_prob *pos, Observed_events *info);
 void free_pos(Pos_prob *pos, Observed_events *info);
 void pos_prob(Backward_algorithm *beta, Forward_algorithm *alpha, Observed_events *info, Pos_prob *pos);
+void parse_splice_sites(Pos_prob *pos, Observed_events *info);
+void free_splice_sites(Pos_prob *pos);
 
 /* --------------- Output --------------- */
 void index_to_sequence(int index, int length, char *seq);
 void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info);
 void print_duration_summary(Explicit_duration *ed);
-void print_locus(Locus *loc, Observed_events *info);
-void parse_splice_sites(Pos_prob *pos, Observed_events *info);
-void free_splice_sites(Pos_prob *pos);
 
 /* --------------- Viterbi Algorithm --------------- */
 void allocate_vit(Vitbi_algo *vit, Observed_events *info);
 void free_vit(Vitbi_algo *vit, Observed_events *info);
-void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
-                        Vitbi_algo *vit, Lambda *l, Locus *loc);
-void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
-                             Vitbi_algo *vit, Lambda *l, Locus *loc);
-void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
 
 #endif

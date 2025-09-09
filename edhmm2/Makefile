@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -fsanitize=address -g
 #CFLAGS = -g -Wall -Wextra	# normal with default debug; mostly useless for runtime bug
 
-OBJS = main.o parser.o model.o output.o stovit.o randomf.o
+OBJS = main.o parser.o model.o output.o viterbi.o randomf.o
 
 all: rfhmm
 
@@ -22,13 +22,13 @@ model.o: model.c model.h
 	@echo "Compiling model"
 	$(CC) $(CFLAGS) -c model.c
 
-output.o: output.c model.h
+output.o: output.c model.h randomf.h
 	@echo "Compiling output session"
 	$(CC) $(CFLAGS) -c output.c
 
-stovit.o: stovit.c model.h
-	@echo "Compiling stochastic Viterbi"
-	$(CC) $(CFLAGS) -c stovit.c
+viterbi.o: viterbi.c model.h randomf.h
+	@echo "Compiling Viterbi algorithm"
+	$(CC) $(CFLAGS) -c viterbi.c
 
 randomf.o: randomf.c randomf.h model.h
 	@echo "Compiling random forest module"
@@ -72,7 +72,7 @@ rf: rfhmm
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
-		--stovit \
+		--stovit
 
 rf-verbose: rfhmm
 	@echo "Running Random Forest with verbose output"
@@ -84,10 +84,10 @@ rf-verbose: rfhmm
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--n_isoforms 100 \
-		--stovit --verbose \
+		--stovit --verbose
 
 rf-custom: rfhmm
-	@echo "Running Random Forest with custom capacity (100 isoforms)"
+	@echo "Running Random Forest with custom parameters"
 	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
@@ -97,6 +97,8 @@ rf-custom: rfhmm
 		--ped_intron ../models/intron.len \
 		--stovit \
 		--n_isoforms 100 \
+		--mtry 3 \
+		--node_size 10
 
 rf-restrict: rfhmm
 	@echo "Running Random Forest with path restriction"
@@ -108,11 +110,11 @@ rf-restrict: rfhmm
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--stovit \
-		--restrict_path \
+		--restrict_path
 
 rf-short: rfhmm
 	@echo "Running Random Forest (short flags)"
-	./rfhmm -s seq -S -N 500 -j isoforms_short.json
+	./rfhmm -s seq -S -N 500 -m 3 -z 5
 
 test-short: rfhmm
 	@echo "Running test (short flags)"

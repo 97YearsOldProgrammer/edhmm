@@ -74,18 +74,18 @@ IsoformHashTable* create_hash_table(int size);
 void free_hash_table(IsoformHashTable *table);
 void print_hash_table_stats(IsoformHashTable *table);
 
-/* --------------- Splitting Function --------------- */
-static SpliceSite*  bootstrap_sample(SpliceSite *sites, int n_sites);
-static double       compute_mse(SpliceSite *sites, int n_sites);
-static double       compute_gini(SpliceSite *sites, int n_sites);
-static int          compare_sites_by_val(const void *a, const void *b);
-static int          find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
-                                    int node_size, int mtry) ;
+/* --------------- Viterbi Algorithm Functions --------------- */
+void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                        Vitbi_algo *vit, Lambda *l, Locus *loc);
+void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                             Vitbi_algo *vit, Lambda *l, Locus *loc);
+void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
 
 /* --------------- Viterbi On Decision Tree Splitting Criteria --------------- */
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
                       Explicit_duration *ed, Lambda *l, Locus *loc, 
-                      Vitbi_algo *vit, int use_path_restriction, IsoformHashTable *hash_table);
+                      Vitbi_algo *vit, int use_path_restriction, int node_size,
+                      IsoformHashTable *hash_table);
 
 void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Observed_events *info, Explicit_duration *ed, 
@@ -99,5 +99,8 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Explicit_duration *ed, Lambda *l, 
                                      Locus *loc, Vitbi_algo *vit,
                                      int use_path_restriction);
+
+/* --------------- Output Functions --------------- */
+void print_locus(Locus *loc, Observed_events *info);
 
 #endif

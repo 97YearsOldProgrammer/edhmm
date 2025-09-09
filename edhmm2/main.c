@@ -28,6 +28,8 @@ void print_usage(const char *program_name) {
     printf("\nRandom Forest options:\n");
     printf("  -S, --stovit                  Enable stochastic Viterbi with Random Forest\n");
     printf("  -N, --n_isoforms NUM          Maximum isoform capacity (default: 10000)\n");
+    printf("  -m, --mtry NUM                Number of drawn candidate variables in each split (default: 1/2)\n");
+    printf("  -z, --node_size NUM           Minimum number of observations in terminal node (default: 5)\n");
     printf("  -r, --restrict_path           Use path restriction in Viterbi\n");
     printf("\nOutput control:\n");
     printf("  -p, --print_splice            Print detailed splice site analysis\n");
@@ -36,7 +38,7 @@ void print_usage(const char *program_name) {
     printf("\nExamples:\n");
     printf("  %s --sequence input.fasta \n", program_name);
     printf("  %s -s input.fasta --stovit\n", program_name);
-    printf("  %s -s input.fasta --stovit --n_isoforms 5000\n", program_name);
+    printf("  %s -s input.fasta --stovit --n_isoforms 5000 --mtry 3\n", program_name);
     printf("  %s -s input.fasta --print_splice --flank 150\n", program_name);
     printf("  %s -s input.fasta --verbose\n", program_name);
     printf("\nRandom Forest Algorithm:\n");
@@ -47,7 +49,7 @@ void print_usage(const char *program_name) {
 
 int main(int argc, char *argv[])
 {
-    // Default paths for model files
+    // Hard Code Path for Default(shall be deleted)
     char *default_don_emission      = "../models/don.pwm";
     char *default_acc_emission      = "../models/acc.pwm";
     char *default_exon_emission     = "../models/exon.mm";
@@ -65,6 +67,8 @@ int main(int argc, char *argv[])
     char *seq_input             = NULL;
     int print_splice_detailed   = 0;
     int flank_size              = DEFAULT_FLANK;
+    int mtry                    = 1/2;          // please refer to the hyperparameter for RF paper for default set up
+    int node_size               = 5;            // for regression 5 as node_size
 
     static struct option long_options[] = {
         {"sequence",        required_argument, 0, 's'},
@@ -76,6 +80,8 @@ int main(int argc, char *argv[])
         {"ped_intron",      required_argument, 0, 'n'},
         {"flank",           required_argument, 0, 'f'},
         {"n_isoforms",      required_argument, 0, 'N'},
+        {"mtry",            required_argument, 0, 'm'},
+        {"node_size",       required_argument, 0, 'z'},
         {"restrict_path",   no_argument,       0, 'r'},
         {"print_splice",    no_argument,       0, 'p'},
         {"stovit",          no_argument,       0, 'S'},
@@ -87,7 +93,7 @@ int main(int argc, char *argv[])
     int option_index = 0;
     int c;
 
-    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:f:N:j:rSpvh", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "s:d:a:e:i:x:n:f:N:m:z:rSpvh", long_options, &option_index)) != -1) {
         switch (c) {
             case 's':
                 seq_input = optarg;
@@ -133,6 +139,20 @@ int main(int argc, char *argv[])
                     return 1;
                 }
                 break;
+            case 'm':
+                mtry = atoi(optarg);
+                if (mtry < 1) {
+                    fprintf(stderr, "Error: mtry must be at least 1\n");
+                    return 1;
+                }
+                break;
+            case 'z':
+                node_size = atoi(optarg);
+                if (node_size < 1) {
+                    fprintf(stderr, "Error: node_size must be at least 1\n");
+                    return 1;
+                }
+                break;
             case 'r':
                 use_path_restriction = 1;
                 break;
@@ -154,7 +174,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-// Initialize data structures
+    /* --------------- Initialize Data Structure --------------- */
     Observed_events info;
     Lambda l;
     Explicit_duration ed;
@@ -162,7 +182,6 @@ int main(int argc, char *argv[])
     Backward_algorithm bw;
     Pos_prob pos;
 
-    // Initialize Data Structure
     memset(&info, 0, sizeof(Observed_events));
     info.flank = flank_size;
     memset(&ed, 0, sizeof(Explicit_duration));
@@ -174,12 +193,12 @@ int main(int argc, char *argv[])
 
     if (DEBUG) printf("\n=== Starting RFHMM Analysis ===\n");
 
-    // ========== PHASE 1: Load Sequence ==========
+    /* --------------- Parse Sequence --------------- */
     if (DEBUG) printf("\n--- Phase 1: Loading Sequence ---\n");
     read_sequence_file(seq_input, &info);
     numerical_transcription(&info, info.original_sequence);
     
-    // Validate flank size
+    // FLANK Size Check
     if (info.flank * 2 >= info.T) {
         fprintf(stderr, "Error: Flank size (%d) is too large for sequence length (%d)\n", 
                 info.flank, info.T);
@@ -187,7 +206,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // ========== PHASE 2: Parse Model Files ==========
+    /* --------------- Parse HMM Model Input --------------- */
     if (DEBUG) printf("\n--- Phase 2: Parsing Model Files ---\n");
     
     // Parse emission matrices (PWMs and Markov models)
@@ -200,15 +219,13 @@ int main(int argc, char *argv[])
     explicit_duration_probability(&ed, Ped_exon, 0);
     explicit_duration_probability(&ed, Ped_intron, 1);
 
-    // ========== PHASE 3: Compute Transition Matrices ==========
     if (DEBUG) printf("\n--- Phase 3: Computing Transition Matrices ---\n");
     compute_transition_matrices(&l);
     
-    // Allocate log_values array after we know the max duration
     l.log_values_len = (ed.max_len_exon > ed.max_len_intron) ? ed.max_len_exon : ed.max_len_intron;
-    l.log_values = calloc(l.log_values_len, sizeof(double));
+    l.log_values     = calloc(l.log_values_len, sizeof(double));
 
-    // ========== PHASE 4: Validate and Display Parameters ==========
+    /* --------------- Validation Check --------------- */
     if (DEBUG) {
         printf("\n--- Phase 4: Validation ---\n");
         printf("Parameters loaded:\n");
@@ -223,7 +240,7 @@ int main(int argc, char *argv[])
         print_duration_summary(&ed);
     }
 
-    // ========== PHASE 5: Convert to Log Space ==========
+    /* --------------- Log Space Conversion --------------- */
     if (DEBUG) printf("\n--- Phase 5: Converting to Log Space ---\n");
     
     int don_size    = power(4, l.B.don_kmer_len);
@@ -245,7 +262,7 @@ int main(int argc, char *argv[])
     log_space_converter(l.B.exon, exon_size);
     log_space_converter(l.B.intron, intron_size);
 
-    // ========== PHASE 6: Run Forward-Backward Algorithm ==========
+    /* --------------- Exe Forward Backward Algorithm --------------- */
     if (DEBUG) printf("\n--- Phase 6: Forward-Backward Algorithm ---\n");
     
     // Allocate memory for algorithms
@@ -283,7 +300,7 @@ int main(int argc, char *argv[])
         printf("Found %d donor sites and %d acceptor sites\n", pos.dons, pos.accs);
     }
 
-    // ========== PHASE 7: Random Forest (if requested) ==========
+    /* --------------- For Stovit --------------- */
     if (use_random_forest) {
         if (DEBUG) printf("\n--- Phase 7: Random Forest Isoform Generation ---\n");
         
@@ -297,29 +314,35 @@ int main(int argc, char *argv[])
             if (DEBUG) {
                 printf("Generating isoforms using Random Forest:\n");
                 printf("  Locus capacity: %d\n", n_isoforms);
+                printf("  Node size: %d\n", node_size);
+                printf("  Mtry: %d\n", mtry);
                 printf("  Path restriction: %s\n", use_path_restriction ? "Yes" : "No");
             }
             
             // Re-run basis for Viterbi
             basis_fw_algo(&l, &ed, &fw, &info);
             
-            // Create and run random forest
-            RandomForest *rf = create_random_forest(&pos, 0.05);  // min_sample_coeff = 0.05
+            // Create and run random forest with proper parameters
+            RandomForest *rf = create_random_forest(&pos, loc, node_size);
+            rf->mtry = mtry;  // Set mtry parameter
+            
             generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
-            free_random_forest(rf);
             
             if (DEBUG) printf("Unique isoforms found: %d\n", loc->n_isoforms);
             print_locus(loc, &info);
+            
+            // Clean up random forest and locus
+            free_random_forest(rf);
             free_locus(loc);
         }
     }
 
-    // ========== PHASE 8: Print Results (if requested) ==========
+    /* --------------- For HMM Hints --------------- */
     if (print_splice_detailed) {
         print_splice_sites(&pos, &info);
     }
 
-    // ========== PHASE 9: Cleanup ==========
+    /* --------------- Memory Cleanup --------------- */
     if (DEBUG) printf("\n--- Phase 9: Cleanup ---\n");
     
     free_splice_sites(&pos);
