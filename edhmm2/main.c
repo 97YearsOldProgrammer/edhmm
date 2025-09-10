@@ -28,7 +28,7 @@ void print_usage(const char *program_name) {
     printf("\nRandom Forest options:\n");
     printf("  -S, --stovit                  Enable stochastic Viterbi with Random Forest\n");
     printf("  -N, --n_isoforms NUM          Maximum isoform capacity (default: 10000)\n");
-    printf("  -m, --mtry NUM                Number of drawn candidate variables in each split (default: 1/2)\n");
+    printf("  -m, --mtry FRACTION           Fraction of features to sample (e.g., 0.5 or 1/2, default: 0.5)\n");
     printf("  -z, --node_size NUM           Minimum number of observations in terminal node (default: 5)\n");
     printf("  -r, --restrict_path           Use path restriction in Viterbi\n");
     printf("\nOutput control:\n");
@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
     char *seq_input             = NULL;
     int print_splice_detailed   = 0;
     int flank_size              = DEFAULT_FLANK;
-    int mtry                    = 1/2;          // please refer to the hyperparameter for RF paper for default set up
+    float mtry                  = 0.5;          // Default to 1/2 of features
     int node_size               = 5;            // for regression 5 as node_size
 
     static struct option long_options[] = {
@@ -140,9 +140,22 @@ int main(int argc, char *argv[])
                 }
                 break;
             case 'm':
-                mtry = atoi(optarg);
-                if (mtry < 1) {
-                    fprintf(stderr, "Error: mtry must be at least 1\n");
+                // Parse as a fraction or decimal
+                if (strchr(optarg, '/')) {
+                    // Handle fraction input like "1/2" or "1/3"
+                    int numerator, denominator;
+                    if (sscanf(optarg, "%d/%d", &numerator, &denominator) == 2 && denominator != 0) {
+                        mtry = (float)numerator / denominator;
+                    } else {
+                        fprintf(stderr, "Error: Invalid fraction format for mtry\n");
+                        return 1;
+                    }
+                } else {
+                    // Handle decimal input like "0.5" or "0.33"
+                    mtry = atof(optarg);
+                }
+                if (mtry <= 0.0 || mtry > 1.0) {
+                    fprintf(stderr, "Error: mtry must be between 0 and 1 (got %.2f)\n", mtry);
                     return 1;
                 }
                 break;
@@ -304,33 +317,23 @@ int main(int argc, char *argv[])
     if (use_random_forest) {
         if (DEBUG) printf("\n--- Phase 7: Random Forest Isoform Generation ---\n");
         
-        // Check if we have splice sites to work with
         if (pos.dons == 0 || pos.accs == 0) {
             printf("Warning: No splice sites found. Cannot run Random Forest.\n");
         } else {
-            // Create locus for storing isoforms
             Locus *loc = create_locus(n_isoforms);
             
             if (DEBUG) {
                 printf("Generating isoforms using Random Forest:\n");
                 printf("  Locus capacity: %d\n", n_isoforms);
                 printf("  Node size: %d\n", node_size);
-                printf("  Mtry: %d\n", mtry);
+                printf("  Mtry: %.2f (%.0f%% of features)\n", mtry, mtry * 100);
                 printf("  Path restriction: %s\n", use_path_restriction ? "Yes" : "No");
             }
-            
-            // Re-run basis for Viterbi
-            basis_fw_algo(&l, &ed, &fw, &info);
-            
-            // Create and run random forest with proper parameters
-            RandomForest *rf = create_random_forest(&pos, loc, node_size);
-            rf->mtry = mtry;  // Set mtry parameter
-            
+
+            RandomForest *rf = create_random_forest(&pos, loc, node_size, mtry);
             generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
-            
             if (DEBUG) printf("Unique isoforms found: %d\n", loc->n_isoforms);
             print_locus(loc, &info);
-            
             // Clean up random forest and locus
             free_random_forest(rf);
             free_locus(loc);

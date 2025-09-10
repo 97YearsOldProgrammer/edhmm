@@ -1,8 +1,9 @@
-#include "model.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "model.h"
+#include "randomf.h"
 
 /* --------------- Auxilary Function --------------- */
 
@@ -91,21 +92,28 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
     }
     
     double exon_val, intron_val;
-    for (int t = first_dons + 1; t < info->T - FLANK; t++) {
+    int end_boundary = info->T - FLANK;
+    
+    for (int t = first_dons + 1; t < end_boundary; t++) {
         exon_val        = vit->v[0][t];
         intron_val      = vit->v[1][t];
         
         int prev_state      = path[t-1];
         int state_duration  = t - last_transition[t-1];
+        int remaining_bps   = end_boundary - t;
         
-        if (pos->xi[t][0] != 0.0) {
-            if (prev_state == 0 && state_duration >= ed->min_len_exon) {
+        if (pos->xi[t][0] != 0.0 && prev_state == 0) {
+            if (state_duration >= ed->min_len_exon && 
+                remaining_bps >= (ed->min_len_intron + ed->min_len_exon)) {
+                
                 vit->v[0][t] = log_sum_sub(exon_val, 0.0, pos->xi[t][0]);
                 vit->v[1][t] = log_sum_sub(intron_val, pos->xi[t][0], 0.0);
-            } 
+            }
         }
-        else if (pos->xi[t][1] != 0.0) {
-            if (prev_state == 1 && state_duration >= ed->min_len_intron) {
+        else if (pos->xi[t][1] != 0.0 && prev_state == 1) {
+            if (state_duration >= ed->min_len_intron && 
+                remaining_bps >= ed->min_len_exon) {
+                
                 vit->v[0][t] = log_sum_sub(exon_val, pos->xi[t][1], 0.0);
                 vit->v[1][t] = log_sum_sub(intron_val, 0.0, pos->xi[t][1]);
             }
@@ -120,23 +128,52 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
                 last_transition[t] = last_transition[t-1];
             }
         } else {
-            path[t] = 1;
-            path_val[t] = vit->v[1][t];
-            if (prev_state == 0) {
+            if (remaining_bps < ed->min_len_exon && prev_state == 1) {
+                path[t] = 0;
+                path_val[t] = vit->v[0][t];
                 last_transition[t] = t;
             } else {
-                last_transition[t] = last_transition[t-1];
+                path[t] = 1;
+                path_val[t] = vit->v[1][t];
+                if (prev_state == 0) {
+                    last_transition[t] = t;
+                } else {
+                    last_transition[t] = last_transition[t-1];
+                }
+            }
+        }
+    }
+    
+    if (path[end_boundary - 1] == 1) {
+        int last_donor_pos = -1;
+        for (int t = end_boundary - 1; t >= FLANK; t--) {
+            if (path[t] == 1 && (t == FLANK || path[t-1] == 0)) {
+                last_donor_pos = t;
+                break;
+            }
+        }
+        
+        if (last_donor_pos > 0) {
+            int forced_acceptor = last_donor_pos + ed->min_len_intron;
+            if (forced_acceptor < end_boundary) {
+                for (int t = forced_acceptor; t < end_boundary; t++) {
+                    path[t] = 0;
+                }
+            } else {
+                for (int t = last_donor_pos; t < end_boundary; t++) {
+                    path[t] = 0;
+                }
             }
         }
     }
     
     double total_val = 0.0;
-    for (int t = FLANK; t < info->T - FLANK; t++) {
+    for (int t = FLANK; t < end_boundary; t++) {
         total_val += path_val[t];
     }
     
     if (loc->n_isoforms < loc->capacity) {
-        Isoform *iso = create_isoform(FLANK, info->T - FLANK - 1);
+        Isoform *iso = create_isoform(FLANK, end_boundary - 1);
         extract_isoform_from_path(path, info, iso);
         iso->val = total_val;
         loc->isoforms[loc->n_isoforms++] = iso;
@@ -146,7 +183,6 @@ void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_dura
     free(last_transition);
     free(path_val);
 }
-
 void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso) {
     int FLANK = (info->flank != 0) ? info->flank : DEFAULT_FLANK;
 

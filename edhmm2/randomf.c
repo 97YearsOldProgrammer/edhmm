@@ -1,9 +1,8 @@
-#include "stdio.h"
-#include "stdlib.h"
-#include "stdbool.h"
-#include "math.h"
-#include "string.h"
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+#include <string.h>
 #include "randomf.h"
 #include "model.h"
 
@@ -158,9 +157,10 @@ void insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso) {
 
 /* --------------- Initialize Random Forest--------------- */
 
-RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size) {
+RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size, float mtry) {
     RandomForest *rf = malloc(sizeof(RandomForest));
     
+    rf->mtry                = mtry;
     rf->sample_size         = pos->dons+pos->accs;
     rf->all_sites           = malloc(rf->sample_size * sizeof(SpliceSite));
     rf->node_size           = node_size;
@@ -239,13 +239,13 @@ static int compare_sites_by_val(const void *a, const void *b) {
 }
 
 static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
-                     int node_size, int mtry) {
+                     int node_size, float mtry) {
 
     if (n_sites < node_size*2 || sites == NULL) {
         return 0;
     }
     
-    int subset_size     = n_sites * mtry;
+    int subset_size     = (int)(n_sites * mtry);
     SpliceSite *subset  = malloc(subset_size * sizeof(SpliceSite));
     
     for (int i = 0; i < subset_size; i++) {

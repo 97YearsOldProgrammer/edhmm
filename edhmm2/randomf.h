@@ -1,11 +1,11 @@
 #ifndef RANDOM_FOREST_H
 #define RANDOM_FOREST_H
 
-#include "model.h"
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 #include <time.h>
+#include "model.h"
 
 /* --------------- Isoform Data Structure --------------- */
 
@@ -46,7 +46,7 @@ typedef struct {
 typedef struct {
     int         sample_size;        // Number of observations that are drawn for each tree
     int         node_size;          // Minimum number of observations in a terminal node
-    int         mtry;               // Number of drawn candidate variables in each split
+    float       mtry;               // Number of drawn candidate variables in each split
     SpliceSite  *all_sites;
     IsoformHashTable *hash_table;
 } RandomForest;                     // Replacement: True
@@ -62,7 +62,7 @@ void free_isoform(Isoform *iso);
 void free_locus(Locus *loc);
 
 /* --------------- Random Forest Data Structure --------------- */
-RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size);
+RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size, float mtry);
 void free_random_forest(RandomForest *rf);
 
 /* --------------- Hash Table Functions --------------- */

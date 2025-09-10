@@ -84,7 +84,8 @@ rf-verbose: rfhmm
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
 		--n_isoforms 100 \
-		--stovit --verbose
+		--m 0.5 \
+		--stovit --verbose --r
 
 rf-custom: rfhmm
 	@echo "Running Random Forest with custom parameters"
