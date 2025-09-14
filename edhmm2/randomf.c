@@ -184,7 +184,7 @@ RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size, flo
 }
 
 /* --------------- Bootstrap Sampling --------------- */
-// Replacement True
+
 static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
     if (n_sites <= 0 || sites == NULL) {
         return NULL;
@@ -194,6 +194,65 @@ static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
         sample[i] = sites[rand() % n_sites];
     }
     return sample;
+}
+
+// for mtry sampling
+static int remove_duplicates(SpliceSite *sites, int n_sites, SpliceSite **unique_sites) {
+    if (n_sites == 0 || sites == NULL) {
+        *unique_sites = NULL;
+        return 0;
+    }
+    
+    int *seen = calloc(n_sites, sizeof(int));
+    int unique_count = 0;
+    
+    for (int i = 0; i < n_sites; i++) {
+        if (seen[i]) continue;
+        
+        seen[i] = 1;
+        unique_count++;
+        
+        for (int j = i + 1; j < n_sites; j++) {
+            if (!seen[j] && 
+                sites[i].pos == sites[j].pos && 
+                sites[i].typ == sites[j].typ) {
+                seen[j] = 1;
+            }
+        }
+    }
+    
+    *unique_sites = malloc(unique_count * sizeof(SpliceSite));
+    int idx = 0;
+    
+    memset(seen, 0, n_sites * sizeof(int));
+    for (int i = 0; i < n_sites; i++) {
+        if (seen[i]) continue;
+        
+        (*unique_sites)[idx++] = sites[i];
+        seen[i] = 1;
+        
+        for (int j = i + 1; j < n_sites; j++) {
+            if (!seen[j] && 
+                sites[i].pos == sites[j].pos && 
+                sites[i].typ == sites[j].typ) {
+                seen[j] = 1;
+            }
+        }
+    }
+    
+    free(seen);
+    return unique_count;
+}
+
+/* --------------- Sample without replacement --------------- */
+// Optimized Fisher-Yates Shuffle
+static void fisher_yates_shuffle(int *array, int n) {
+    for (int i = n - 1; i > 0; i--) {
+        int j       = rand() % (i + 1);
+        int temp    = array[i];
+        array[i]    = array[j];
+        array[j]    = temp;
+    }
 }
 
 /* --------------- Splitting Criteria --------------- */
@@ -238,19 +297,30 @@ static int compare_sites_by_val(const void *a, const void *b) {
     else return 0;
 }
 
-static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
-                     int node_size, float mtry) {
+/* --------------- Recursive Splitting --------------- */
 
-    if (n_sites < node_size*2 || sites == NULL) {
+static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshold,
+                          int node_size, float mtry) {
+
+    if (n_sites < node_size * 2 || sites == NULL) {
         return 0;
     }
     
-    int subset_size     = (int)(n_sites * mtry);
-    SpliceSite *subset  = malloc(subset_size * sizeof(SpliceSite));
+    int subset_size = (int)(n_sites * mtry);
+    if (subset_size < 1) subset_size = 1;
+    if (subset_size > n_sites) subset_size = n_sites;
     
-    for (int i = 0; i < subset_size; i++) {
-        subset[i] = sites[rand() % n_sites];
+    int *indices = malloc(n_sites * sizeof(int));
+    for (int i = 0; i < n_sites; i++) {
+        indices[i] = i;
     }
+    
+    fisher_yates_shuffle(indices, n_sites);    
+    SpliceSite *subset = malloc(subset_size * sizeof(SpliceSite));
+    for (int i = 0; i < subset_size; i++) {
+        subset[i] = sites[indices[i]];
+    }
+    free(indices);
     
     qsort(subset, subset_size, sizeof(SpliceSite), compare_sites_by_val);
     
@@ -260,22 +330,26 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
     int found_split     = 0;
     
     for (int i = 1; i < subset_size; i++) {
-        double threshold = subset[i].val;
+        // Skip if same value as previous (no split possible)
+        if (subset[i].val == subset[i-1].val) continue;
         
+        double threshold = (subset[i-1].val + subset[i].val) / 2.0;
+        
+        // Count how split would divide the FULL node dataset
         int left_count = 0, right_count = 0;
         for (int j = 0; j < n_sites; j++) {
             if (sites[j].val < threshold) left_count++;
             else right_count++;
         }
         
+        // Enforce minimum node size
         if (left_count < node_size || right_count < node_size) continue;
 
-        // check mse gain
+        // Calculate MSE gain
         double left_mse     = compute_mse(subset, i);
         double right_mse    = compute_mse(&subset[i], subset_size - i);
         double gain         = parent_mse - left_mse - right_mse;
 
-        // make split
         SpliceSite *temp_left   = malloc(left_count  * sizeof(SpliceSite));
         SpliceSite *temp_right  = malloc(right_count * sizeof(SpliceSite));
         
@@ -287,13 +361,15 @@ static int find_best_split(SpliceSite *sites, int n_sites, double *best_threshol
                 temp_right[r_idx++] = sites[j];
             }
         }
-        // check gini impurity
+        
+        // Using Gini impurity to avoid pure dons and accs
         double left_gini    = compute_gini(temp_left,  left_count);
         double right_gini   = compute_gini(temp_right, right_count);
         
         free(temp_left);
         free(temp_right);
         
+        // Skip if either child would be pure (all donors or all acceptors)
         if (left_gini == 0.0 || right_gini == 0.0) continue;
 
         if (gain > max_gain) {
@@ -378,7 +454,8 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
             insert_isoform_to_hash(hash_table, new_iso);
         }
     }
-    // clean up shit
+
+    // clean up
     free(subset_pos.dons_bps);
     free(subset_pos.dons_val);
     free(subset_pos.accs_bps);
@@ -396,31 +473,43 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction) {
     
-    if (n_sites >= rf->node_size) {
-        viterbi_on_subset(sites, n_sites, info, ed, l, loc, vit, 
+    // First, check if this node's data has collisions (duplicates)
+    // This ensures even root node (depth=1) gets deduplicated
+    SpliceSite *unique_sites = NULL;
+    int unique_count = remove_duplicates(sites, n_sites, &unique_sites);
+    
+    if (DEBUG && unique_count < n_sites) {
+        printf("  Node had %d sites, reduced to %d unique sites\n", 
+               n_sites, unique_count);
+    }
+    
+    // Use unique sites for processing
+    if (unique_count >= rf->node_size) {
+        viterbi_on_subset(unique_sites, unique_count, info, ed, l, loc, vit, 
                          use_path_restriction, rf->node_size, rf->hash_table);
     }
     
-    // find best split
+    // Find best split using unique sites
     double threshold;
-    if (!find_best_split(sites, n_sites, &threshold, rf->node_size, rf->mtry)) {
+    if (!find_best_split(unique_sites, unique_count, &threshold, rf->node_size, rf->mtry)) {
+        free(unique_sites);
         return;
     }
     
-    // Split data
-    SpliceSite *left_sites  = malloc(n_sites * sizeof(SpliceSite));
-    SpliceSite *right_sites = malloc(n_sites * sizeof(SpliceSite));
+    // Split data based on threshold
+    SpliceSite *left_sites  = malloc(unique_count * sizeof(SpliceSite));
+    SpliceSite *right_sites = malloc(unique_count * sizeof(SpliceSite));
     int left_count = 0, right_count = 0;
     
-    for (int i = 0; i < n_sites; i++) {
-        if (sites[i].val < threshold) {
-            left_sites[left_count++] = sites[i];
+    for (int i = 0; i < unique_count; i++) {
+        if (unique_sites[i].val < threshold) {
+            left_sites[left_count++] = unique_sites[i];
         } else {
-            right_sites[right_count++] = sites[i];
+            right_sites[right_count++] = unique_sites[i];
         }
     }
     
-    // Recursion
+    // Recursion on children
     if (left_count > 0) {
         build_tree_with_viterbi(left_sites, left_count, rf, info, ed, l, 
                                loc, vit, use_path_restriction);
@@ -430,32 +519,68 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                                loc, vit, use_path_restriction);
     }
     
+    free(unique_sites);
     free(left_sites);
     free(right_sites);
 }
 
-/* --------------- Exe Isoform Forest --------------- */
+/* --------------- Execute Isoform Forest --------------- */
 
 void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Explicit_duration *ed, Lambda *l, 
                                      Locus *loc, Vitbi_algo *vit,
                                      int use_path_restriction) {
     
+    int trees_without_new_isoforms = 0;
+    int max_trees_without_progress = 100;  // Stop after 100 trees with no new isoforms
+    int tree_count = 0;
     
-    while (loc->n_isoforms < loc->capacity) {        
-        // bootstrap
+    while (loc->n_isoforms < loc->capacity) {
+        tree_count++;
+        int prev_isoform_count = loc->n_isoforms;
+        
+        // Bootstrap sample (WITH replacement)
         SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->sample_size);
-                
-        // build tree and collect isoform
+        
+        if (DEBUG && tree_count % 10 == 0) {
+            printf("Tree %d: %d unique isoforms found so far\n", 
+                   tree_count, loc->n_isoforms);
+        }
+        
+        // Build tree and collect isoforms
         build_tree_with_viterbi(bootstrap, rf->sample_size, rf, info, ed, l, 
                                loc, vit, use_path_restriction);
         free(bootstrap);
         
-        // Termination
+        // Check if we found new isoforms
+        if (loc->n_isoforms == prev_isoform_count) {
+            trees_without_new_isoforms++;
+            if (trees_without_new_isoforms >= max_trees_without_progress) {
+                if (DEBUG) {
+                    printf("No new isoforms found in last %d trees. Stopping early.\n", 
+                           max_trees_without_progress);
+                    printf("Total trees generated: %d\n", tree_count);
+                }
+                break;
+            }
+        } else {
+            trees_without_new_isoforms = 0;  // Reset counter
+        }
+        
+        // Check if capacity reached
         if (loc->n_isoforms >= loc->capacity) {
-            if (DEBUG) printf("Reached isoform capacity (%d)\n", loc->capacity);
+            if (DEBUG) {
+                printf("Reached isoform capacity (%d) after %d trees\n", 
+                       loc->capacity, tree_count);
+            }
             break;
         }
+    }
+    
+    if (DEBUG) {
+        printf("Random Forest generation complete:\n");
+        printf("  Trees generated: %d\n", tree_count);
+        printf("  Unique isoforms found: %d\n", loc->n_isoforms);
     }
 }
 

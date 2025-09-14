@@ -19,9 +19,9 @@ typedef struct {
 } Isoform;
 
 typedef struct {
-    Isoform **isoforms;     // array of isoform pointers
-    int n_isoforms;         // number of isoforms
-    int capacity;           // capacity for isoforms array
+    Isoform **isoforms;         // array of isoform pointers
+    int n_isoforms;             // number of isoforms
+    int capacity;               // capacity for isoforms array
 } Locus;
 
 typedef struct {
@@ -33,14 +33,14 @@ typedef struct {
 /* --------------- Hash Table Structures --------------- */
 
 typedef struct HashNode {
-    Isoform *isoform;           // Pointer to the actual isoform
-    struct HashNode *next;      // For collision chaining
+    Isoform *isoform;               // Pointer to the actual isoform
+    struct HashNode *next;          // For collision chaining
 } HashNode;
 
 typedef struct {
-    HashNode **buckets;         // Array of bucket heads
-    int size;                   // Number of buckets
-    int count;                  // Number of stored isoforms
+    HashNode **buckets;             // Array of bucket heads
+    int size;                       // Number of buckets
+    int count;                      // Number of stored isoforms
 } IsoformHashTable;
 
 typedef struct {
