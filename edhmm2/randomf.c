@@ -8,7 +8,6 @@
 
 /* --------------- Hash Table Size Function --------------- */
 // using 6k±1 property of finding prime number next to 0.8 load size
-
 static bool is_prime(int n) {
     if (n <= 1) return false;
     if (n <= 3) return true;
@@ -184,7 +183,7 @@ RandomForest* create_random_forest(Pos_prob *pos, Locus *loc, int node_size, flo
 }
 
 /* --------------- Bootstrap Sampling --------------- */
-
+// bootstrap sampling (replacement = True)
 static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
     if (n_sites <= 0 || sites == NULL) {
         return NULL;
@@ -195,7 +194,6 @@ static SpliceSite* bootstrap_sample(SpliceSite *sites, int n_sites) {
     }
     return sample;
 }
-
 // for mtry sampling
 static int remove_duplicates(SpliceSite *sites, int n_sites, SpliceSite **unique_sites) {
     if (n_sites == 0 || sites == NULL) {
@@ -473,8 +471,6 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction) {
     
-    // First, check if this node's data has collisions (duplicates)
-    // This ensures even root node (depth=1) gets deduplicated
     SpliceSite *unique_sites = NULL;
     int unique_count = remove_duplicates(sites, n_sites, &unique_sites);
     
@@ -483,13 +479,11 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                n_sites, unique_count);
     }
     
-    // Use unique sites for processing
     if (unique_count >= rf->node_size) {
         viterbi_on_subset(unique_sites, unique_count, info, ed, l, loc, vit, 
                          use_path_restriction, rf->node_size, rf->hash_table);
     }
     
-    // Find best split using unique sites
     double threshold;
     if (!find_best_split(unique_sites, unique_count, &threshold, rf->node_size, rf->mtry)) {
         free(unique_sites);
@@ -531,15 +525,15 @@ void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
                                      Locus *loc, Vitbi_algo *vit,
                                      int use_path_restriction) {
     
-    int trees_without_new_isoforms = 0;
-    int max_trees_without_progress = 100;  // Stop after 100 trees with no new isoforms
-    int tree_count = 0;
+    int trees_without_new_isoforms  = 0;
+    int max_trees_without_progress  = 100;
+    int tree_count                  = 0;
     
     while (loc->n_isoforms < loc->capacity) {
         tree_count++;
         int prev_isoform_count = loc->n_isoforms;
         
-        // Bootstrap sample (WITH replacement)
+        // Bootstrap sample
         SpliceSite *bootstrap = bootstrap_sample(rf->all_sites, rf->sample_size);
         
         if (DEBUG && tree_count % 10 == 0) {

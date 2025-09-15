@@ -64,7 +64,7 @@ hint: rfhmm
 
 # Random Forest Viterbi tests
 rf: rfhmm
-	@echo "Running Random Forest isoform generation (runs until capacity reached)"
+	@echo "Running Random Forest isoform generation"
 	./rfhmm --sequence seq \
 		--don_emission ../models/don.pwm \
 		--acc_emission ../models/acc.pwm \
@@ -72,6 +72,8 @@ rf: rfhmm
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
+		--n_isoforms 100 \
+		--m 0.5 \
 		--stovit
 
 rf-verbose: rfhmm
@@ -96,10 +98,10 @@ rf-custom: rfhmm
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
-		--stovit \
 		--n_isoforms 100 \
-		--mtry 3 \
-		--node_size 10
+		--m 0.5 \
+		--stovit \
+		--node_size 5
 
 rf-restrict: rfhmm
 	@echo "Running Random Forest with path restriction"
@@ -110,6 +112,8 @@ rf-restrict: rfhmm
 		--intron_emission ../models/intron.mm \
 		--ped_exon ../models/exon.len \
 		--ped_intron ../models/intron.len \
+		--n_isoforms 100 \
+		--m 0.5 \
 		--stovit \
 		--restrict_path
 

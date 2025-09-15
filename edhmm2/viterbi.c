@@ -241,9 +241,9 @@ void allocate_vit(Vitbi_algo *vit, Observed_events *info) {
 void free_vit(Vitbi_algo *vit, Observed_events *info) {
     if(DEBUG) printf("Start freeing memory for the viterbi algorithm:");
     
-    int size_array = info->T;
-    for(int i = 0; i < size_array; i++)
+    for(int i = 0; i < HS; i++) {
         free(vit->v[i]);
+    }
     free(vit->v);
     
     if(DEBUG) printf("\tFinished\n");
