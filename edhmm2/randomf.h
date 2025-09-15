@@ -55,6 +55,10 @@ typedef struct {
 /* --------------- Function Declaration --------------- */
 /* ---------------------------------------------------- */
 
+/* --------------- Hash Table Size Functions --------------- */
+int next_prime_optimized(int n);
+int compute_hash_table_size(int locus_size);
+
 /* --------------- Locus Class --------------- */
 Locus* create_locus(int capacity);
 Isoform* create_isoform(int beg, int end);
@@ -67,6 +71,7 @@ void free_random_forest(RandomForest *rf);
 
 /* --------------- Hash Table Functions --------------- */
 unsigned long   compute_isoform_hash(Isoform *iso, int table_size);
+int             isoforms_are_identical(Isoform *iso1, Isoform *iso2);
 int             isoform_exists_in_hash(IsoformHashTable *table, Isoform *new_iso);
 void            insert_isoform_to_hash(IsoformHashTable *table, Isoform *iso);
 
@@ -91,8 +96,6 @@ void build_tree_with_viterbi(SpliceSite *sites, int n_sites, RandomForest *rf,
                              Observed_events *info, Explicit_duration *ed, 
                              Lambda *l, Locus *loc, Vitbi_algo *vit,
                              int use_path_restriction);
-
-int isoforms_are_identical(Isoform *iso1, Isoform *iso2);
 
 /* --------------- Viterbi On Random Forest --------------- */
 void generate_isoforms_random_forest(RandomForest *rf, Observed_events *info,
