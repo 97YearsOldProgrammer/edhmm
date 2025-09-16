@@ -85,6 +85,7 @@ void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration
 void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
                              Vitbi_algo *vit, Lambda *l, Locus *loc);
 void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
+int validate_isoform(Isoform *iso, Explicit_duration *ed);
 
 /* --------------- Viterbi On Decision Tree Splitting Criteria --------------- */
 void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,

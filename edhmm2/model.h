@@ -139,8 +139,16 @@ void print_transition_matrices_summary(Lambda *l);
 void print_splice_sites(Pos_prob *pos, Observed_events *info);
 void print_duration_summary(Explicit_duration *ed);
 
-/* --------------- Viterbi Algorithm --------------- */
+/* --------------- Viterbi Algorithm Functions --------------- */
+void single_viterbi_algo(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                        Vitbi_algo *vit, Lambda *l, Locus *loc);
+void path_restricted_viterbi(Pos_prob *pos, Observed_events *info, Explicit_duration *ed, 
+                             Vitbi_algo *vit, Lambda *l, Locus *loc);
+void extract_isoform_from_path(int *path, Observed_events *info, Isoform *iso);
+int validate_isoform(Isoform *iso, Explicit_duration *ed);
+
 void allocate_vit(Vitbi_algo *vit, Observed_events *info);
 void free_vit(Vitbi_algo *vit, Observed_events *info);
+void debug_isoform(Isoform *iso, const char *context);
 
 #endif

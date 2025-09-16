@@ -433,15 +433,18 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
     for (int i = 0; i < n_accs; i++) {
         subset_pos.xi[subset_pos.accs_bps[i]][1] = subset_pos.accs_val[i];
     }
+    // create temp viterbi path
+    reset_viterbi(vit, info);    
+    initialize_viterbi_from_posterior(vit, &subset_pos, info);
     
     int prev_count = loc->n_isoforms;
-        
+    
     if (use_path_restriction) {
         path_restricted_viterbi(&subset_pos, info, ed, vit, l, loc);
     } else {
         single_viterbi_algo(&subset_pos, info, ed, vit, l, loc);
     }
-        
+    // check duplicate isoform
     if (loc->n_isoforms > prev_count) {
         Isoform *new_iso = loc->isoforms[loc->n_isoforms - 1];
         // insert into hash table
@@ -452,7 +455,6 @@ void viterbi_on_subset(SpliceSite *sites, int n_sites, Observed_events *info,
             insert_isoform_to_hash(hash_table, new_iso);
         }
     }
-
     // clean up
     free(subset_pos.dons_bps);
     free(subset_pos.dons_val);

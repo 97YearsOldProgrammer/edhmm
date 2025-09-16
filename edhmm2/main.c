@@ -282,12 +282,6 @@ int main(int argc, char *argv[])
     allocate_bw(&bw, &ed, &info);
     allocate_pos(&pos, &info);
 
-    // Allocate Viterbi if using random forest
-    Vitbi_algo vit;
-    if (use_random_forest) {
-        allocate_vit(&vit, &info);
-    }
-
     // Run forward algorithm
     basis_fw_algo(&l, &ed, &fw, &info);
     if (DEBUG) printf("  Forward basis complete\n");
@@ -351,9 +345,6 @@ int main(int argc, char *argv[])
     free_alpha(&info, &fw);
     free_beta(&info, &bw);
     free_pos(&pos, &info);
-    if (use_random_forest) {
-        free_vit(&vit, &info);
-    }
     free(info.original_sequence);
     free(info.numerical_sequence);
     free_lambda(&l);
