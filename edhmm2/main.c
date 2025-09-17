@@ -324,9 +324,10 @@ int main(int argc, char *argv[])
             }
 
             RandomForest *rf = create_random_forest(&pos, loc, node_size, mtry);
-            generate_isoforms_random_forest(rf, &info, &ed, &l, loc, &vit, use_path_restriction);
+            generate_isoforms_random_forest(rf, &info, &ed, &l, loc, use_path_restriction);
             if (DEBUG) printf("Unique isoforms found: %d\n", loc->n_isoforms);
             print_locus(loc, &info);
+            
             // Clean up random forest and locus
             free_random_forest(rf);
             free_locus(loc);
@@ -339,7 +340,7 @@ int main(int argc, char *argv[])
     }
 
     /* --------------- Memory Cleanup --------------- */
-    if (DEBUG) printf("\n--- Phase 9: Cleanup ---\n");
+    if (DEBUG) printf("\n--- Phase 8: Cleanup ---\n");
     
     free_splice_sites(&pos);
     free_alpha(&info, &fw);
